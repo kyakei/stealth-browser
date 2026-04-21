@@ -1,0 +1,35 @@
+# Deps + build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Runtime data — MUST NOT be committed (contains session tokens, cookies, captured traffic)
+logs/
+*.log
+data/
+sessions/
+pids/
+
+# Per-user Chrome profiles spawned by attach-manager
+/tmp/rapyd-claude-profile*/
+
+# Editor + OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Env + secrets (never)
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+auth.json
+
+# Screenshots + evidence (per-hunt, not per-tool)
+*.png
+*.jpg
+*.mp4

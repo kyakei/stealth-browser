@@ -1,0 +1,18 @@
+{
+  "name": "stealth-browser-mcp",
+  "version": "0.1.0",
+  "description": "MCP server wrapping stealth-browser-v2 HTTP API (localhost:7331) for Claude Code",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "stealth-browser-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "author": "kyakei",
+  "license": "MIT"
+}

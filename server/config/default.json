@@ -1,0 +1,110 @@
+{
+  "server": {
+    "http": {
+      "port": 7331,
+      "host": "localhost",
+      "cors": {
+        "enabled": true,
+        "origins": ["http://localhost:3000", "http://localhost:8080"]
+      }
+    },
+    "websocket": {
+      "enabled": true,
+      "port": 7332
+    },
+    "auth": {
+      "enabled": false,
+      "apiKey": null,
+      "jwt": {
+        "secret": "your-secret-key-change-in-production",
+        "expiresIn": "24h"
+      }
+    },
+    "rateLimit": {
+      "windowMs": 60000,
+      "max": 100,
+      "message": "Too many requests from this IP"
+    }
+  },
+  "browser": {
+    "engine": "chromium",
+    "headless": false,
+    "executablePath": "/usr/bin/chromium",
+    "userDataDir": "/tmp/stealth-browser-profiles",
+    "args": [
+      "--no-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage",
+      "--disable-infobars",
+      "--window-size=1366,768",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding"
+    ],
+    "pool": {
+      "min": 1,
+      "max": 5,
+      "idleTimeout": 300000,
+      "acquireTimeout": 60000
+    }
+  },
+  "sessions": {
+    "maxConcurrent": 10,
+    "defaultTimeout": 30000,
+    "persistenceEnabled": true,
+    "cleanupInterval": 300000,
+    "stateDirectory": "/tmp/stealth-browser-states",
+    "maxAge": 3600000
+  },
+  "plugins": {
+    "stealth": {
+      "enabled": true,
+      "level": "medium",
+      "fingerprintRandomization": true,
+      "webglVendorSpoofing": true,
+      "userAgentRotation": true
+    },
+    "automation": {
+      "enabled": true,
+      "humanBehavior": true,
+      "typingDelay": {
+        "min": 20,
+        "max": 80
+      },
+      "clickDelay": {
+        "min": 100,
+        "max": 300
+      }
+    },
+    "monitoring": {
+      "enabled": true,
+      "metricsInterval": 5000,
+      "performanceTracking": true,
+      "networkMonitoring": true
+    },
+    "captcha": {
+      "enabled": true,
+      "solver": "auto",
+      "timeout": 30000,
+      "retries": 3
+    }
+  },
+  "logging": {
+    "level": "info",
+    "console": true,
+    "file": {
+      "enabled": true,
+      "path": "logs/stealth-browser.log",
+      "maxFiles": 5,
+      "maxSize": "10m"
+    },
+    "format": "combined"
+  },
+  "security": {
+    "helmet": {
+      "contentSecurityPolicy": false,
+      "crossOriginEmbedderPolicy": false
+    },
+    "compression": true
+  }
+}
