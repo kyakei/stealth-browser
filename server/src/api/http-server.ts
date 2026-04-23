@@ -933,14 +933,15 @@ export class HTTPServer extends EventEmitter {
 
     // ---------------- Visual capture (#24, #7) ----------------
 
-    // POST /v2/attach/screenshot { fullPage?, path?, selector? }
+    // POST /v2/attach/screenshot { fullPage?, path?, selector?, returnBase64? }
     this.app.post('/v2/attach/screenshot', async (req, res) => {
       try {
-        const { fullPage, path, selector } = req.body || {};
-        const opts: { fullPage?: boolean; path?: string; selector?: string } = {};
+        const { fullPage, path, selector, returnBase64 } = req.body || {};
+        const opts: { fullPage?: boolean; path?: string; selector?: string; returnBase64?: boolean } = {};
         if (typeof fullPage === 'boolean') opts.fullPage = fullPage;
         if (typeof path === 'string' && path) opts.path = path;
         if (typeof selector === 'string' && selector) opts.selector = selector;
+        if (typeof returnBase64 === 'boolean') opts.returnBase64 = returnBase64;
         const out = await this.attachManager.screenshot(opts);
         return res.json(this.createSuccessResponse(out));
       } catch (error) {

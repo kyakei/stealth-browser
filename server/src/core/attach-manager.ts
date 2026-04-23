@@ -22,12 +22,12 @@ export interface CookieDiff {
 }
 
 export interface TokenInventory {
-  xoxc?: string;
-  xoxs?: string;
-  xoxb?: string;
-  xoxd?: string;
-  xoxp?: string;
-  bootDataApiToken?: string;
+  xoxc: string | null;
+  xoxs: string | null;
+  xoxb: string | null;
+  xoxd: string | null;
+  xoxp: string | null;
+  bootDataApiToken: string | null;
   otherXoxTokens: string[];
   source: Record<string, string>;
 }
@@ -758,8 +758,14 @@ export class AttachManager {
 
   // ---------------- Visual capture (#24, #7) ----------------
 
-  /** Screenshot the primary tab (or a selector). Returns base64 + optional disk path. */
-  public async screenshot(opts: { fullPage?: boolean; path?: string; selector?: string } = {}): Promise<{ base64: string; path?: string; bytes: number }> {
+  /**
+   * Screenshot the primary tab (or a selector). `path` writes to disk; `returnBase64`
+   * controls whether the PNG bytes are echoed back inline (a fullPage PNG is ~100KB+
+   * which overflows MCP tool-result budgets). Default: inline base64 only when no
+   * path is given; setting `returnBase64: true` forces inline even with a path,
+   * `returnBase64: false` suppresses it even without a path.
+   */
+  public async screenshot(opts: { fullPage?: boolean; path?: string; selector?: string; returnBase64?: boolean } = {}): Promise<{ base64?: string; path?: string; bytes: number }> {
     const page = await this.getPrimary();
     let buf: Buffer;
     if (opts.selector) {
@@ -773,10 +779,9 @@ export class AttachManager {
       await fs.writeFile(opts.path, buf);
       diskPath = opts.path;
     }
-    const out: { base64: string; path?: string; bytes: number } = {
-      base64: buf.toString('base64'),
-      bytes: buf.length
-    };
+    const inline = opts.returnBase64 === undefined ? !diskPath : opts.returnBase64;
+    const out: { base64?: string; path?: string; bytes: number } = { bytes: buf.length };
+    if (inline) out.base64 = buf.toString('base64');
     if (diskPath) out.path = diskPath;
     return out;
   }
@@ -831,7 +836,12 @@ export class AttachManager {
       return result;
     });
 
-    const inv: TokenInventory = { otherXoxTokens: [], source: {} };
+    const inv: TokenInventory = {
+      xoxc: null, xoxs: null, xoxb: null, xoxd: null, xoxp: null,
+      bootDataApiToken: null,
+      otherXoxTokens: [],
+      source: {}
+    };
     if (typeof raw.bootDataApiToken === 'string') {
       inv.bootDataApiToken = raw.bootDataApiToken;
       inv.source.bootDataApiToken = 'localStorage.boot_data.api_token';

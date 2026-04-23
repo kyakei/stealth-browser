@@ -305,13 +305,14 @@ const TOOLS = [
   },
   {
     name: 'browser_screenshot',
-    description: 'Capture the attached tab as PNG. Returns base64 + bytes. Optional fullPage (entire scroll), path (save to disk), selector (scope to element). Essential for H1 report evidence.',
+    description: 'Capture the attached tab as PNG. Returns {bytes, path?, base64?}. Inline base64 is suppressed by default when `path` is set (a fullPage PNG is ~100KB+ and overflows MCP tool-result budgets). Set returnBase64:true to force inline; set returnBase64:false to suppress even without a path.',
     inputSchema: {
       type: 'object',
       properties: {
         fullPage: { type: 'boolean', default: false },
         path: { type: 'string', description: 'Optional absolute path to save PNG' },
         selector: { type: 'string', description: 'Optional CSS selector — screenshot just that element' },
+        returnBase64: { type: 'boolean', description: 'Force/suppress inline base64. Default: inline only when path is unset.' },
       },
       additionalProperties: false,
     },
@@ -331,7 +332,7 @@ const TOOLS = [
   },
   {
     name: 'browser_extract_tokens',
-    description: 'Scan the attached tab for Slack xox* tokens and boot_data.api_token in localStorage + window globals + page source. Returns inventory {xoxc, xoxs, xoxb, xoxd, xoxp, bootDataApiToken, otherXoxTokens, source}.',
+    description: 'Scan the attached tab for Slack xox* tokens and boot_data.api_token in localStorage + window globals + page source. Always returns all 8 keys: {xoxc, xoxs, xoxb, xoxd, xoxp, bootDataApiToken} each string-or-null, plus otherXoxTokens: string[] and source: Record<string,string> (maps each found key to where it was found).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: () => httpRequest('GET', '/v2/attach/tokens'),
   },
