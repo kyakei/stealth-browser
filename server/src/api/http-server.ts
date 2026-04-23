@@ -834,6 +834,385 @@ export class HTTPServer extends EventEmitter {
       return res.json(this.createSuccessResponse({ cleared }));
     });
 
+    // ---------------- Cookies (#16, #17, #18) ----------------
+
+    // GET /v2/attach/cookies?domain=&name=
+    this.app.get('/v2/attach/cookies', async (req, res) => {
+      try {
+        const domain = typeof req.query.domain === 'string' ? req.query.domain : undefined;
+        const name = typeof req.query.name === 'string' ? req.query.name : undefined;
+        const filters: { domain?: string; name?: string } = {};
+        if (domain) filters.domain = domain;
+        if (name) filters.name = name;
+        const cookies = await this.attachManager.getCookies(filters);
+        return res.json(this.createSuccessResponse({ cookies, count: cookies.length }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_COOKIES_GET_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/cookies/delete { domain?, name?, path? }
+    this.app.post('/v2/attach/cookies/delete', async (req, res) => {
+      try {
+        const { domain, name, path } = req.body || {};
+        const filters: { domain?: string; name?: string; path?: string } = {};
+        if (typeof domain === 'string' && domain) filters.domain = domain;
+        if (typeof name === 'string' && name) filters.name = name;
+        if (typeof path === 'string' && path) filters.path = path;
+        const result = await this.attachManager.deleteCookies(filters);
+        return res.json(this.createSuccessResponse(result));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_COOKIES_DELETE_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/cookies/snapshot { name }
+    this.app.post('/v2/attach/cookies/snapshot', async (req, res) => {
+      try {
+        const { name } = req.body || {};
+        if (typeof name !== 'string' || !name) {
+          return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `name`'));
+        }
+        const out = await this.attachManager.snapshotCookies(name);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_COOKIES_SNAPSHOT_FAILED', (error as Error).message));
+      }
+    });
+
+    // GET /v2/attach/cookies/snapshots — list saved snapshots
+    this.app.get('/v2/attach/cookies/snapshots', (_req, res) => {
+      const list = this.attachManager.listCookieSnapshots();
+      return res.json(this.createSuccessResponse({ snapshots: list, count: list.length }));
+    });
+
+    // GET /v2/attach/cookies/diff?before=X&after=Y (after optional, defaults to 'current')
+    this.app.get('/v2/attach/cookies/diff', async (req, res) => {
+      try {
+        const before = typeof req.query.before === 'string' ? req.query.before : '';
+        const after = typeof req.query.after === 'string' && req.query.after ? req.query.after : 'current';
+        if (!before) {
+          return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `before` snapshot name'));
+        }
+        const diff = await this.attachManager.diffCookieSnapshots(before, after);
+        return res.json(this.createSuccessResponse({
+          before,
+          after,
+          addedCount: diff.added.length,
+          removedCount: diff.removed.length,
+          changedCount: diff.changed.length,
+          ...diff
+        }));
+      } catch (error) {
+        const msg = (error as Error).message;
+        const code = msg.includes('not found') ? 'SNAPSHOT_NOT_FOUND' : 'ATTACH_COOKIES_DIFF_FAILED';
+        const status = code === 'SNAPSHOT_NOT_FOUND' ? 404 : 400;
+        return res.status(status).json(this.createErrorResponse(code, msg));
+      }
+    });
+
+    // ---------------- Waits (#21) ----------------
+
+    // POST /v2/attach/wait-for { text?, selector?, timeout? }
+    this.app.post('/v2/attach/wait-for', async (req, res) => {
+      try {
+        const { text, selector, timeout } = req.body || {};
+        const target: { text?: string; selector?: string } = {};
+        if (typeof text === 'string' && text) target.text = text;
+        if (typeof selector === 'string' && selector) target.selector = selector;
+        if (!target.text && !target.selector) {
+          return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `text` or `selector`'));
+        }
+        const to = typeof timeout === 'number' ? timeout : 10_000;
+        const out = await this.attachManager.waitFor(target, to);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_WAIT_FAILED', (error as Error).message));
+      }
+    });
+
+    // ---------------- Visual capture (#24, #7) ----------------
+
+    // POST /v2/attach/screenshot { fullPage?, path?, selector? }
+    this.app.post('/v2/attach/screenshot', async (req, res) => {
+      try {
+        const { fullPage, path, selector } = req.body || {};
+        const opts: { fullPage?: boolean; path?: string; selector?: string } = {};
+        if (typeof fullPage === 'boolean') opts.fullPage = fullPage;
+        if (typeof path === 'string' && path) opts.path = path;
+        if (typeof selector === 'string' && selector) opts.selector = selector;
+        const out = await this.attachManager.screenshot(opts);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_SCREENSHOT_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/dom-snapshot { path? }
+    this.app.post('/v2/attach/dom-snapshot', async (req, res) => {
+      try {
+        const { path } = req.body || {};
+        const out = await this.attachManager.domSnapshot(typeof path === 'string' && path ? path : undefined);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_DOM_SNAPSHOT_FAILED', (error as Error).message));
+      }
+    });
+
+    // ---------------- Token extraction (#5) ----------------
+
+    // GET /v2/attach/tokens
+    this.app.get('/v2/attach/tokens', async (_req, res) => {
+      try {
+        const out = await this.attachManager.extractTokens();
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_TOKENS_FAILED', (error as Error).message));
+      }
+    });
+
+    // ---------------- HAR export (#6) ----------------
+
+    // GET /v2/attach/har
+    this.app.get('/v2/attach/har', (_req, res) => {
+      try {
+        const har = this.attachManager.toHAR();
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename="attach.har"');
+        return res.send(JSON.stringify(har, null, 2));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_HAR_FAILED', (error as Error).message));
+      }
+    });
+
+    // ============================================================
+    // #4 / #22 — Named / incognito contexts
+    // ============================================================
+
+    // GET  /v2/attach/contexts                         — list
+    // POST /v2/attach/contexts           {name}        — create
+    // POST /v2/attach/contexts/close     {name}        — close
+    // POST /v2/attach/contexts/navigate  {name,url,..} — navigate in named ctx
+    // GET  /v2/attach/contexts/cookies?name=X&domain=Y&name=Z — cookies in named ctx
+
+    this.app.get('/v2/attach/contexts', async (_req, res) => {
+      try {
+        const list = await this.attachManager.listContexts();
+        return res.json(this.createSuccessResponse({ count: list.length, contexts: list }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_CONTEXTS_LIST_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/contexts', async (req, res) => {
+      try {
+        const { name } = req.body || {};
+        if (typeof name !== 'string' || !name) return res.status(400).json(this.createErrorResponse('NAME_REQUIRED', 'Provide `name`'));
+        const info = await this.attachManager.createContext(name);
+        return res.json(this.createSuccessResponse(info));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_CONTEXT_CREATE_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/contexts/close', async (req, res) => {
+      try {
+        const { name } = req.body || {};
+        if (typeof name !== 'string' || !name) return res.status(400).json(this.createErrorResponse('NAME_REQUIRED', 'Provide `name`'));
+        await this.attachManager.closeContext(name);
+        return res.json(this.createSuccessResponse({ closed: name }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_CONTEXT_CLOSE_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/contexts/navigate', async (req, res) => {
+      try {
+        const { name, url, waitUntil, timeout } = req.body || {};
+        if (typeof name !== 'string' || !name) return res.status(400).json(this.createErrorResponse('NAME_REQUIRED', 'Provide `name`'));
+        if (typeof url !== 'string' || !url) return res.status(400).json(this.createErrorResponse('URL_REQUIRED', 'Provide `url`'));
+        const out = await this.attachManager.navigateContext(name, url, { waitUntil, timeout });
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_CONTEXT_NAV_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.get('/v2/attach/contexts/cookies', async (req, res) => {
+      try {
+        const name = typeof req.query.context === 'string' ? req.query.context : 'default';
+        const domain = typeof req.query.domain === 'string' ? req.query.domain : undefined;
+        const cookieName = typeof req.query.name === 'string' ? req.query.name : undefined;
+        const cookies = await this.attachManager.getContextCookies(name, {
+          ...(domain ? { domain } : {}),
+          ...(cookieName ? { name: cookieName } : {})
+        });
+        return res.json(this.createSuccessResponse({ count: cookies.length, cookies }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_CONTEXT_COOKIES_FAILED', (error as Error).message));
+      }
+    });
+
+    // ============================================================
+    // #2 — Env cookie loader
+    // ============================================================
+
+    // POST /v2/attach/cookies/load-file  {path, context?}
+    // POST /v2/attach/cookies/export-file {path, context?, domain}
+    this.app.post('/v2/attach/cookies/load-file', async (req, res) => {
+      try {
+        const { path, context = 'default' } = req.body || {};
+        if (typeof path !== 'string' || !path) return res.status(400).json(this.createErrorResponse('PATH_REQUIRED', 'Provide `path`'));
+        const out = await this.attachManager.loadCookiesFromFile(path, context);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_COOKIES_LOAD_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/cookies/export-file', async (req, res) => {
+      try {
+        const { path, context = 'default', domain } = req.body || {};
+        if (typeof path !== 'string' || !path) return res.status(400).json(this.createErrorResponse('PATH_REQUIRED', 'Provide `path`'));
+        if (typeof domain !== 'string' || !domain) return res.status(400).json(this.createErrorResponse('DOMAIN_REQUIRED', 'Provide `domain`'));
+        const content = await this.attachManager.exportCookiesToEnv(context, domain);
+        const fs = await import('fs/promises');
+        await fs.writeFile(path, content, 'utf8');
+        return res.json(this.createSuccessResponse({ path, bytes: content.length }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_COOKIES_EXPORT_FAILED', (error as Error).message));
+      }
+    });
+
+    // ============================================================
+    // #1 / #20 — WebSocket
+    // ============================================================
+
+    // GET  /v2/attach/ws                  — list connections
+    // GET  /v2/attach/ws/:id              — full detail with all frames
+    // GET  /v2/attach/ws/frames?connectionId=&direction=&contains=&limit= — flat frame query
+    // POST /v2/attach/ws/send {urlContains, payload, context?} — inject frame via WebSocket.send
+    this.app.get('/v2/attach/ws', (_req, res) => {
+      try {
+        const list = this.attachManager.listWebSockets();
+        return res.json(this.createSuccessResponse({ count: list.length, connections: list }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_WS_LIST_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.get('/v2/attach/ws/frames', (req, res) => {
+      try {
+        const connectionId = typeof req.query.connectionId === 'string' ? req.query.connectionId : undefined;
+        const direction = (req.query.direction === 'in' || req.query.direction === 'out') ? req.query.direction : undefined;
+        const contains = typeof req.query.contains === 'string' ? req.query.contains : undefined;
+        const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+        const frames = this.attachManager.queryWsFrames({
+          ...(connectionId ? { connectionId } : {}),
+          ...(direction ? { direction } : {}),
+          ...(contains ? { contains } : {}),
+          ...(limit ? { limit } : {})
+        });
+        return res.json(this.createSuccessResponse({ count: frames.length, frames }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_WS_FRAMES_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.get('/v2/attach/ws/:id', (req, res) => {
+      const ws = this.attachManager.getWebSocket(req.params.id);
+      if (!ws) return res.status(404).json(this.createErrorResponse('WS_NOT_FOUND', 'No WebSocket connection with that id'));
+      return res.json(this.createSuccessResponse(ws));
+    });
+
+    this.app.post('/v2/attach/ws/send', async (req, res) => {
+      try {
+        const { urlContains, payload, context = 'default' } = req.body || {};
+        if (typeof urlContains !== 'string' || !urlContains) return res.status(400).json(this.createErrorResponse('URL_CONTAINS_REQUIRED', 'Provide `urlContains`'));
+        if (typeof payload !== 'string') return res.status(400).json(this.createErrorResponse('PAYLOAD_REQUIRED', 'Provide string `payload`'));
+        const out = await this.attachManager.sendWsFrame(urlContains, payload, context);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_WS_SEND_FAILED', (error as Error).message));
+      }
+    });
+
+    // ============================================================
+    // #3 / #23 — Intercept
+    // ============================================================
+
+    // POST /v2/attach/intercept/enable {direction, urlContains?, urlRegex?, method?}
+    // GET  /v2/attach/intercept         — current rule + pending items
+    // POST /v2/attach/intercept/forward {id, method?, url?, headers?, body?, status?}
+    // POST /v2/attach/intercept/drop    {id}
+    // POST /v2/attach/intercept/disable
+
+    this.app.post('/v2/attach/intercept/enable', async (req, res) => {
+      try {
+        const { direction, urlContains, urlRegex, method } = req.body || {};
+        if (direction !== 'request' && direction !== 'response' && direction !== 'both') {
+          return res.status(400).json(this.createErrorResponse('DIRECTION_REQUIRED', 'direction must be request|response|both'));
+        }
+        await this.attachManager.enableIntercept({
+          direction,
+          ...(typeof urlContains === 'string' ? { urlContains } : {}),
+          ...(typeof urlRegex === 'string' ? { urlRegex } : {}),
+          ...(typeof method === 'string' ? { method } : {})
+        });
+        return res.json(this.createSuccessResponse({ enabled: true, rule: this.attachManager.getInterceptRule() }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_INTERCEPT_ENABLE_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.get('/v2/attach/intercept', (_req, res) => {
+      try {
+        return res.json(this.createSuccessResponse({
+          rule: this.attachManager.getInterceptRule(),
+          pending: this.attachManager.listIntercepted()
+        }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_INTERCEPT_GET_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/intercept/forward', async (req, res) => {
+      try {
+        const { id, method, url, headers, body, status } = req.body || {};
+        if (typeof id !== 'string' || !id) return res.status(400).json(this.createErrorResponse('ID_REQUIRED', 'Provide `id`'));
+        await this.attachManager.forwardIntercepted(id, {
+          ...(typeof method === 'string' ? { method } : {}),
+          ...(typeof url === 'string' ? { url } : {}),
+          ...(headers && typeof headers === 'object' ? { headers } : {}),
+          ...(typeof body === 'string' ? { body } : {}),
+          ...(typeof status === 'number' ? { status } : {})
+        });
+        return res.json(this.createSuccessResponse({ forwarded: id }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_INTERCEPT_FORWARD_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/intercept/drop', async (req, res) => {
+      try {
+        const { id } = req.body || {};
+        if (typeof id !== 'string' || !id) return res.status(400).json(this.createErrorResponse('ID_REQUIRED', 'Provide `id`'));
+        await this.attachManager.dropIntercepted(id);
+        return res.json(this.createSuccessResponse({ dropped: id }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_INTERCEPT_DROP_FAILED', (error as Error).message));
+      }
+    });
+
+    this.app.post('/v2/attach/intercept/disable', async (_req, res) => {
+      try {
+        await this.attachManager.disableIntercept();
+        return res.json(this.createSuccessResponse({ disabled: true }));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('ATTACH_INTERCEPT_DISABLE_FAILED', (error as Error).message));
+      }
+    });
+
     // Session metrics
     this.app.get('/v2/sessions/:sessionId/metrics', (req, res) => {
       const metrics = this.sessionManager.getSessionMetrics(req.params.sessionId);

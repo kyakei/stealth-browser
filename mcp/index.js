@@ -228,7 +228,7 @@ const TOOLS = [
   },
   {
     name: 'browser_cookies_get',
-    description: 'Get all cookies for a headless session (by sessionId). For attach-mode cookies, use browser_eval_js with document.cookie or export via sync-to-session.',
+    description: 'Get all cookies for a headless session (by sessionId). For attach-mode cookies, use browser_cookies_get_attached instead.',
     inputSchema: {
       type: 'object',
       properties: { sessionId: { type: 'string' } },
@@ -236,6 +236,309 @@ const TOOLS = [
       additionalProperties: false,
     },
     handler: ({ sessionId }) => httpRequest('GET', `/v2/sessions/${encodeURIComponent(sessionId)}/cookies`),
+  },
+  {
+    name: 'browser_cookies_get_attached',
+    description: 'Read cookies from the attached Chrome. Includes HttpOnly cookies (unlike document.cookie via browser_eval_js). Optional substring filter on domain and exact match on name. Use this to enumerate session cookies like Slack d= / d-s.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: 'Substring match on cookie domain (e.g. ".slack.com")' },
+        name: { type: 'string', description: 'Exact cookie name' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args = {}) => httpRequest('GET', '/v2/attach/cookies', { query: args }),
+  },
+  {
+    name: 'browser_cookies_delete',
+    description: 'Delete cookies from the attached Chrome matching filters. At least one of {domain, name, path} required — prevents accidental whole-jar wipes. Use when you need to isolate a workspace session without manually signing out.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: 'Substring match on cookie domain' },
+        name: { type: 'string', description: 'Exact cookie name' },
+        path: { type: 'string', description: 'Exact cookie path' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/cookies/delete', { body: args }),
+  },
+  {
+    name: 'browser_cookies_snapshot',
+    description: 'Save the current attached-Chrome cookie jar under `name` for later diffing. Snapshots are in-memory (lost on server restart). Overwrites if name exists.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/cookies/snapshot', { body: args }),
+  },
+  {
+    name: 'browser_cookies_diff',
+    description: 'Diff two cookie snapshots, or a snapshot vs current. Returns {added, removed, changed}. Use to see exactly which cookies a login/flow sets.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        before: { type: 'string', description: 'Name of "before" snapshot' },
+        after: { type: 'string', description: 'Name of "after" snapshot. Defaults to live jar.', default: 'current' },
+      },
+      required: ['before'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('GET', '/v2/attach/cookies/diff', { query: args }),
+  },
+  {
+    name: 'browser_wait_for',
+    description: 'Wait until the attached tab contains `text` or matches `selector`. Timeout in ms (default 10000). Use instead of shell sleep after browser_navigate. Provide exactly one of text/selector.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Substring to wait for in document.body.innerText' },
+        selector: { type: 'string', description: 'CSS selector to wait for' },
+        timeout: { type: 'integer', default: 10000 },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/wait-for', { body: args }),
+  },
+  {
+    name: 'browser_screenshot',
+    description: 'Capture the attached tab as PNG. Returns base64 + bytes. Optional fullPage (entire scroll), path (save to disk), selector (scope to element). Essential for H1 report evidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fullPage: { type: 'boolean', default: false },
+        path: { type: 'string', description: 'Optional absolute path to save PNG' },
+        selector: { type: 'string', description: 'Optional CSS selector — screenshot just that element' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args = {}) => httpRequest('POST', '/v2/attach/screenshot', { body: args }),
+  },
+  {
+    name: 'browser_dom_snapshot',
+    description: 'Capture the attached tab\'s full serialized HTML. Optional `path` writes to disk. Returns {html, bytes, path?}. Useful for post-hoc analysis and report evidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Optional absolute path to save HTML' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args = {}) => httpRequest('POST', '/v2/attach/dom-snapshot', { body: args }),
+  },
+  {
+    name: 'browser_extract_tokens',
+    description: 'Scan the attached tab for Slack xox* tokens and boot_data.api_token in localStorage + window globals + page source. Returns inventory {xoxc, xoxs, xoxb, xoxd, xoxp, bootDataApiToken, otherXoxTokens, source}.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/tokens'),
+  },
+  {
+    name: 'browser_har_export',
+    description: 'Export the attached-tab network log as HAR 1.2 JSON. Ready to import into Burp / HTTP Toolkit / DevTools. Includes response bodies (after #19 CDP body-capture fix).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/har'),
+  },
+
+  // #4 / #22 — Named / incognito contexts
+  {
+    name: 'browser_contexts_list',
+    description: 'List all browser contexts (cookie jars) on the attached browser. Default context + any named contexts created via browser_context_create. Each shows pages, cookie count, creation time.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/contexts'),
+  },
+  {
+    name: 'browser_context_create',
+    description: 'Create a fresh BrowserContext with its own cookie jar. In attached Chrome this opens a separate window. Use to run WS1 + WS2 sessions side-by-side with zero cookie bleed.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Handle for this context (cannot be "default")' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/contexts', { body: args }),
+  },
+  {
+    name: 'browser_context_close',
+    description: 'Close a named context (does NOT affect the default context or detach Chrome).',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/contexts/close', { body: args }),
+  },
+  {
+    name: 'browser_context_navigate',
+    description: "Navigate within a named context's first page.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        url: { type: 'string' },
+        waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle', 'commit'], default: 'domcontentloaded' },
+        timeout: { type: 'number', default: 30000 },
+      },
+      required: ['name', 'url'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/contexts/navigate', { body: args }),
+  },
+  {
+    name: 'browser_context_cookies',
+    description: 'Read cookies from a specific context (default or named). Same filter args as browser_cookies_get_attached.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        context: { type: 'string', default: 'default' },
+        domain: { type: 'string' },
+        name: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('GET', '/v2/attach/contexts/cookies', { query: args }),
+  },
+
+  // #2 — Env cookie loader
+  {
+    name: 'browser_cookies_load_file',
+    description: 'Load cookies into an attached context from a file. Supports JSON (array or {cookies:[...]}) OR env format: "# domain=X", "# path=/", "# secure", "# httpOnly" directive lines, then "name=value" pairs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to cookie file' },
+        context: { type: 'string', default: 'default' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/cookies/load-file', { body: args }),
+  },
+  {
+    name: 'browser_cookies_export_file',
+    description: 'Write current-context cookies (filtered to `domain`) out to a file in the env format that browser_cookies_load_file understands. Round-trippable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        context: { type: 'string', default: 'default' },
+        domain: { type: 'string', description: 'Only export cookies for this domain (or parents)' },
+      },
+      required: ['path', 'domain'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/cookies/export-file', { body: args }),
+  },
+
+  // #1 / #20 — WebSocket capture + send
+  {
+    name: 'browser_ws_list',
+    description: 'List WebSocket connections captured from the attached tabs. Returns url, handshake status, frame count, open/closed state.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/ws'),
+  },
+  {
+    name: 'browser_ws_detail',
+    description: 'Full detail (handshake headers + all captured frames) for a single WebSocket connection by id (from browser_ws_list).',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    handler: ({ id }) => httpRequest('GET', `/v2/attach/ws/${encodeURIComponent(id)}`),
+  },
+  {
+    name: 'browser_ws_frames',
+    description: 'Flat cross-connection frame query. Filter by connectionId, direction (in|out), substring match, limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connectionId: { type: 'string' },
+        direction: { type: 'string', enum: ['in', 'out'] },
+        contains: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('GET', '/v2/attach/ws/frames', { query: args }),
+  },
+  {
+    name: 'browser_ws_send',
+    description: 'Inject a frame on every open WebSocket whose url contains the given substring. Implementation: calls WebSocket.send() via page.evaluate on each matching WS the page opened (an init-script proxy keeps them in a registry). Use for replay, mutation, subscription hijack tests.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        urlContains: { type: 'string' },
+        payload: { type: 'string' },
+        context: { type: 'string', default: 'default' },
+      },
+      required: ['urlContains', 'payload'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/ws/send', { body: args }),
+  },
+
+  // #3 / #23 — Request + response intercept
+  {
+    name: 'browser_intercept_enable',
+    description: 'Turn on Burp-style request/response interception on the default context. Matching rule: urlContains, urlRegex, method. Direction: request (pause before send), response (pause after server reply), both. Paused items appear in browser_intercept_status.pending; forward or drop each to release.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['request', 'response', 'both'] },
+        urlContains: { type: 'string' },
+        urlRegex: { type: 'string' },
+        method: { type: 'string' },
+      },
+      required: ['direction'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/intercept/enable', { body: args }),
+  },
+  {
+    name: 'browser_intercept_status',
+    description: 'Current intercept rule + list of paused requests/responses waiting for forward/drop.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/intercept'),
+  },
+  {
+    name: 'browser_intercept_forward',
+    description: 'Release a paused intercepted item by id. Request-phase: optionally override method/url/headers/body. Response-phase: optionally override status/headers/body.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        method: { type: 'string' },
+        url: { type: 'string' },
+        headers: { type: 'object' },
+        body: { type: 'string' },
+        status: { type: 'number' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/intercept/forward', { body: args }),
+  },
+  {
+    name: 'browser_intercept_drop',
+    description: 'Abort a paused intercepted item (client receives ERR_BLOCKED_BY_CLIENT).',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/intercept/drop', { body: args }),
+  },
+  {
+    name: 'browser_intercept_disable',
+    description: 'Uninstall intercept rule; any pending items get auto-forwarded.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('POST', '/v2/attach/intercept/disable'),
   },
 ];
 
