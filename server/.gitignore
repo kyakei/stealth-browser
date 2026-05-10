@@ -24,6 +24,7 @@ pids/
 # Env + secrets (never)
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 credentials*.json
