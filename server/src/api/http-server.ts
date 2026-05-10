@@ -972,6 +972,40 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
+    // ---------------- Captcha solver (2captcha) ----------------
+
+    // GET /v2/attach/captcha/detect — auto-detect captcha type+sitekey on current tab.
+    this.app.get('/v2/attach/captcha/detect', async (_req, res) => {
+      try {
+        const out = await this.attachManager.detectCaptcha();
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CAPTCHA_DETECT_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/captcha/solve — solve via 2captcha. Body forwards SolveOpts.
+    this.app.post('/v2/attach/captcha/solve', async (req, res) => {
+      try {
+        const opts = req.body || {};
+        const out = await this.attachManager.solveCaptcha(opts);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CAPTCHA_SOLVE_FAILED', (error as Error).message));
+      }
+    });
+
+    // GET /v2/attach/captcha/balance — current 2captcha account balance ($).
+    this.app.get('/v2/attach/captcha/balance', async (req, res) => {
+      try {
+        const apiKey = (req.query.apiKey as string) || undefined;
+        const out = await this.attachManager.getCaptchaBalance(apiKey);
+        return res.json(this.createSuccessResponse(out));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CAPTCHA_BALANCE_FAILED', (error as Error).message));
+      }
+    });
+
     // ---------------- HAR export (#6) ----------------
 
     // GET /v2/attach/har

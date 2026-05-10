@@ -6,6 +6,7 @@ import { Browser, BrowserContext, CDPSession, Page, Request, Response, Cookie } 
 import { chromium as chromiumExtra } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Logger } from '@utils/logger';
+import { CaptchaSolver, SolveOpts as CaptchaSolveOpts, SolveResult as CaptchaSolveResult, DetectResult as CaptchaDetectResult } from './captcha-solver';
 
 chromiumExtra.use(StealthPlugin());
 
@@ -881,6 +882,25 @@ export class AttachManager {
       }
     }
     return inv;
+  }
+
+  // ---------------- Captcha (2captcha) ----------------
+
+  private captchaSolver: CaptchaSolver = new CaptchaSolver();
+
+  public async detectCaptcha(): Promise<CaptchaDetectResult> {
+    const page = await this.getPrimary();
+    return this.captchaSolver.detect(page);
+  }
+
+  public async solveCaptcha(opts: CaptchaSolveOpts = {}): Promise<CaptchaSolveResult> {
+    const page = await this.getPrimary();
+    if (!opts.pageUrl) opts.pageUrl = page.url();
+    return this.captchaSolver.solve(page, opts);
+  }
+
+  public async getCaptchaBalance(apiKey?: string): Promise<{ balance: number }> {
+    return this.captchaSolver.getBalance(apiKey);
   }
 
   // ---------------- HAR export (#6) ----------------

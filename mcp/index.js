@@ -541,6 +541,61 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: () => httpRequest('POST', '/v2/attach/intercept/disable'),
   },
+
+  // ---------------- 2captcha-backed captcha solver ----------------
+  {
+    name: 'browser_captcha_detect',
+    description: 'Detect what captcha (if any) is on the attached tab. Returns {type, sitekey?, iframeUrl?, action?, evidence[]}. Supported types: recaptcha_v2, recaptcha_v2_invisible, recaptcha_v3, hcaptcha, hcaptcha_invisible, turnstile, datadome, mtcaptcha, friendly, aws_waf. type="unknown" means none detected.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/captcha/detect'),
+  },
+  {
+    name: 'browser_solve_captcha',
+    description: 'Solve a captcha on the attached tab via 2captcha and inject the result back into the page. With no args, auto-detects type + sitekey. Override any field. Returns {type, sitekey, taskId, token?|cookie?, injected, cost, durationMs}. Cost-aware: typical reCAPTCHA v2 ≈ $0.003. DataDome / GeeTest / KeyCaptcha / Lemin REQUIRE `proxy` (cookie is IP-bound). For reCAPTCHA v3 pass `action`. For Turnstile pass `action`/`cdata` if the page uses them. Set inject:false to get the token without page mutation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['recaptcha_v2','recaptcha_v2_invisible','recaptcha_v3','hcaptcha','hcaptcha_invisible','turnstile','datadome','aws_waf','mtcaptcha','friendly'], description: 'Override auto-detect.' },
+        sitekey: { type: 'string', description: 'Override auto-detected sitekey.' },
+        pageUrl: { type: 'string', description: 'Defaults to current tab URL.' },
+        action: { type: 'string', description: 'reCAPTCHA v3 / Turnstile action arg.' },
+        minScore: { type: 'number', description: 'reCAPTCHA v3 min score (0.3/0.7/0.9).' },
+        cdata: { type: 'string', description: 'Turnstile cdata.' },
+        captchaUrl: { type: 'string', description: 'DataDome iframe URL (auto-detected if available).' },
+        userAgent: { type: 'string', description: 'DataDome / proxy mode user-agent.' },
+        proxy: {
+          type: 'object',
+          description: 'Required for DataDome (and any *Task non-Proxyless variant). { type, address, port, login?, password? }.',
+          properties: {
+            type: { type: 'string', enum: ['http','https','socks4','socks5'] },
+            address: { type: 'string' },
+            port: { type: 'integer' },
+            login: { type: 'string' },
+            password: { type: 'string' },
+          },
+          required: ['type','address','port'],
+        },
+        enterprise: { type: 'boolean', description: 'reCAPTCHA Enterprise variant.' },
+        isInvisible: { type: 'boolean' },
+        maxWaitSeconds: { type: 'integer', default: 180 },
+        pollIntervalMs: { type: 'integer', default: 5000 },
+        apiKey: { type: 'string', description: 'Override TWOCAPTCHA_API_KEY env.' },
+        inject: { type: 'boolean', default: true, description: 'Set false to skip in-page injection (just return the token).' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/captcha/solve', { body: args }),
+  },
+  {
+    name: 'browser_captcha_balance',
+    description: 'Check 2captcha account balance ($). Use to gauge how many solves left.',
+    inputSchema: {
+      type: 'object',
+      properties: { apiKey: { type: 'string' } },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('GET', '/v2/attach/captcha/balance', { query: args }),
+  },
 ];
 
 const server = new Server(

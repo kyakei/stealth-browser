@@ -6,6 +6,7 @@
  * Entry point for the application.
  */
 
+import 'dotenv/config';
 import { EventEmitter } from 'events';
 import gracefulShutdown from 'http-graceful-shutdown';
 import { Logger } from './utils/logger';

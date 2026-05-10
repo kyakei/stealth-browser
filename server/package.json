@@ -32,6 +32,7 @@
     "axios": "^1.6.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.18.0",
     "helmet": "^7.1.0",
     "http-graceful-shutdown": "^3.1.16",
@@ -86,5 +87,6 @@
       "prettier --write",
       "git add"
     ]
-  }
+  },
+  "packageManager": "npm@11.14.1+sha256.bddc8ec2a698d283674cf0a798ef444ba7332497f330dd166056281fcafaca7a"
 }
