@@ -16,7 +16,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 const BASE = process.env.STEALTH_BROWSER_URL || 'http://localhost:7331';
-const DEFAULT_TIMEOUT_MS = 60_000;
+// 240s default — Enterprise reCAPTCHA / Arkose solves routinely take 30-90s.
+const DEFAULT_TIMEOUT_MS = Number(process.env.STEALTH_BROWSER_TIMEOUT_MS) || 240_000;
 
 async function httpRequest(method, path, { body, query } = {}) {
   const url = new URL(path, BASE);
@@ -555,14 +556,16 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['recaptcha_v2','recaptcha_v2_invisible','recaptcha_v3','hcaptcha','hcaptcha_invisible','turnstile','datadome','aws_waf','mtcaptcha','friendly'], description: 'Override auto-detect.' },
-        sitekey: { type: 'string', description: 'Override auto-detected sitekey.' },
+        type: { type: 'string', enum: ['recaptcha_v2','recaptcha_v2_invisible','recaptcha_v3','hcaptcha','hcaptcha_invisible','turnstile','datadome','aws_waf','mtcaptcha','friendly','funcaptcha'], description: 'Override auto-detect.' },
+        sitekey: { type: 'string', description: 'Override auto-detected sitekey. For funcaptcha this is the public key (data-pkey).' },
         pageUrl: { type: 'string', description: 'Defaults to current tab URL.' },
         action: { type: 'string', description: 'reCAPTCHA v3 / Turnstile action arg.' },
         minScore: { type: 'number', description: 'reCAPTCHA v3 min score (0.3/0.7/0.9).' },
         cdata: { type: 'string', description: 'Turnstile cdata.' },
-        captchaUrl: { type: 'string', description: 'DataDome iframe URL (auto-detected if available).' },
-        userAgent: { type: 'string', description: 'DataDome / proxy mode user-agent.' },
+        captchaUrl: { type: 'string', description: 'DataDome / FunCaptcha iframe URL (auto-detected if available).' },
+        userAgent: { type: 'string', description: 'DataDome / FunCaptcha / proxy mode user-agent.' },
+        apiDomain: { type: 'string', description: 'reCAPTCHA api host — set to "recaptcha.net" if the page serves reCAPTCHA from recaptcha.net (otherwise default google).' },
+        funcaptchaApiJSSubdomain: { type: 'string', description: 'FunCaptcha custom JS subdomain (when site uses a non-default Arkose JS host).' },
         proxy: {
           type: 'object',
           description: 'Required for DataDome (and any *Task non-Proxyless variant). { type, address, port, login?, password? }.',

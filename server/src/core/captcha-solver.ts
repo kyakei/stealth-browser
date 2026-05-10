@@ -15,7 +15,8 @@ export type CaptchaType =
   | 'datadome'
   | 'aws_waf'
   | 'mtcaptcha'
-  | 'friendly';
+  | 'friendly'
+  | 'funcaptcha';
 
 export interface ProxySpec {
   type: 'http' | 'https' | 'socks4' | 'socks5';
@@ -37,6 +38,8 @@ export interface SolveOpts {
   proxy?: ProxySpec | undefined;
   enterprise?: boolean | undefined;
   isInvisible?: boolean | undefined;
+  apiDomain?: string | undefined;             // recaptcha.net vs google.com
+  funcaptchaApiJSSubdomain?: string | undefined;
   maxWaitSeconds?: number | undefined;
   pollIntervalMs?: number | undefined;
   apiKey?: string | undefined;
@@ -48,6 +51,8 @@ export interface DetectResult {
   sitekey?: string | undefined;
   iframeUrl?: string | undefined;
   action?: string | undefined;
+  enterprise?: boolean | undefined;
+  apiDomain?: string | undefined;
   evidence: string[];
 }
 
@@ -73,6 +78,7 @@ const PROXYLESS_TASK_TYPE: Record<string, string> = {
   turnstile: 'TurnstileTaskProxyless',
   mtcaptcha: 'MtCaptchaTaskProxyless',
   friendly: 'FriendlyCaptchaTaskProxyless',
+  funcaptcha: 'FunCaptchaTaskProxyless',
 };
 
 const PROXIED_TASK_TYPE: Record<string, string> = {
@@ -86,6 +92,15 @@ const PROXIED_TASK_TYPE: Record<string, string> = {
   aws_waf: 'AmazonTask',
   mtcaptcha: 'MtCaptchaTask',
   friendly: 'FriendlyCaptchaTask',
+  funcaptcha: 'FunCaptchaTask',
+};
+
+// Enterprise reCAPTCHA uses distinct task types (different token format).
+// Only kicks in when enterprise=true on a recaptcha_v2/v2_invisible/v3 type.
+const ENTERPRISE_TASK_TYPE: Record<string, { proxyless: string; proxied: string }> = {
+  recaptcha_v2: { proxyless: 'RecaptchaV2EnterpriseTaskProxyless', proxied: 'RecaptchaV2EnterpriseTask' },
+  recaptcha_v2_invisible: { proxyless: 'RecaptchaV2EnterpriseTaskProxyless', proxied: 'RecaptchaV2EnterpriseTask' },
+  recaptcha_v3: { proxyless: 'RecaptchaV3EnterpriseTaskProxyless', proxied: 'RecaptchaV3EnterpriseTask' },
 };
 
 export class TwoCaptchaError extends Error {
@@ -132,6 +147,8 @@ export class CaptchaSolver {
     let sitekey = opts.sitekey;
     let action = opts.action;
     let captchaUrl = opts.captchaUrl;
+    let enterprise = opts.enterprise;
+    let apiDomain = opts.apiDomain;
     const pageUrl = opts.pageUrl || page.url();
 
     if (!type || !sitekey) {
@@ -145,7 +162,9 @@ export class CaptchaSolver {
       type = type || (det.type as CaptchaType);
       sitekey = sitekey || det.sitekey;
       action = action || det.action;
-      if (det.type === 'datadome') captchaUrl = captchaUrl || det.iframeUrl;
+      if (enterprise === undefined && det.enterprise) enterprise = true;
+      if (!apiDomain && det.apiDomain) apiDomain = det.apiDomain;
+      if (det.type === 'datadome' || det.type === 'funcaptcha') captchaUrl = captchaUrl || det.iframeUrl;
     }
 
     if (type === 'datadome') {
@@ -157,7 +176,7 @@ export class CaptchaSolver {
       throw new TwoCaptchaError(`sitekey required for type=${type}`, 'SITEKEY_REQUIRED');
     }
 
-    const task = this.buildTask(type, { sitekey, pageUrl, action, minScore: opts.minScore, cdata: opts.cdata, captchaUrl, userAgent: opts.userAgent, proxy: opts.proxy, enterprise: opts.enterprise, isInvisible: opts.isInvisible });
+    const task = this.buildTask(type, { sitekey, pageUrl, action, minScore: opts.minScore, cdata: opts.cdata, captchaUrl, userAgent: opts.userAgent, proxy: opts.proxy, enterprise, isInvisible: opts.isInvisible, apiDomain, funcaptchaApiJSSubdomain: opts.funcaptchaApiJSSubdomain });
     const clientKey = this.resolveKey({ apiKey: opts.apiKey });
 
     Logger.info('captcha: createTask', { type, taskType: task.type, pageUrl, sitekey });
@@ -191,6 +210,8 @@ export class CaptchaSolver {
       out.token = sol.token;
     } else if (type === 'aws_waf') {
       out.token = sol.token || sol.captcha_voucher || JSON.stringify(sol);
+    } else if (type === 'funcaptcha') {
+      out.token = sol.token;
     }
 
     if (inject) {
@@ -209,17 +230,37 @@ export class CaptchaSolver {
   private buildTask(type: CaptchaType, p: {
     sitekey?: string | undefined; pageUrl: string; action?: string | undefined; minScore?: number | undefined; cdata?: string | undefined;
     captchaUrl?: string | undefined; userAgent?: string | undefined; proxy?: ProxySpec | undefined; enterprise?: boolean | undefined; isInvisible?: boolean | undefined;
+    apiDomain?: string | undefined; funcaptchaApiJSSubdomain?: string | undefined;
   }): any {
-    const taskName = p.proxy ? PROXIED_TASK_TYPE[type] : (PROXYLESS_TASK_TYPE[type] || PROXIED_TASK_TYPE[type]);
+    // Enterprise reCAPTCHA uses a distinct task type, not RecaptchaV2TaskProxyless + isEnterprise.
+    let taskName: string | undefined;
+    if (p.enterprise && ENTERPRISE_TASK_TYPE[type]) {
+      const ent = ENTERPRISE_TASK_TYPE[type]!;
+      taskName = p.proxy ? ent.proxied : ent.proxyless;
+    } else {
+      taskName = p.proxy ? PROXIED_TASK_TYPE[type] : (PROXYLESS_TASK_TYPE[type] || PROXIED_TASK_TYPE[type]);
+    }
     if (!taskName) throw new TwoCaptchaError(`unsupported type: ${type}`, 'UNSUPPORTED_TYPE');
 
     const t: any = { type: taskName, websiteURL: p.pageUrl };
-    if (p.sitekey) t.websiteKey = p.sitekey;
+
+    // FunCaptcha (Arkose) uses websitePublicKey instead of websiteKey.
+    if (type === 'funcaptcha') {
+      if (p.sitekey) t.websitePublicKey = p.sitekey;
+      if (p.funcaptchaApiJSSubdomain) t.funcaptchaApiJSSubdomain = p.funcaptchaApiJSSubdomain;
+      if (p.userAgent) t.userAgent = p.userAgent;
+    } else if (p.sitekey) {
+      t.websiteKey = p.sitekey;
+    }
 
     if (type === 'recaptcha_v2_invisible') t.isInvisible = true;
     if (type === 'hcaptcha_invisible') t.isInvisible = true;
     if (p.isInvisible !== undefined) t.isInvisible = p.isInvisible;
-    if (p.enterprise) t.isEnterprise = true;
+
+    // apiDomain is only valid on reCAPTCHA tasks (and matters for Enterprise served from recaptcha.net).
+    if (p.apiDomain && (type === 'recaptcha_v2' || type === 'recaptcha_v2_invisible' || type === 'recaptcha_v3')) {
+      t.apiDomain = p.apiDomain;
+    }
 
     if (type === 'recaptcha_v3') {
       if (p.action) t.pageAction = p.action;
@@ -292,7 +333,7 @@ export class CaptchaSolver {
         return n;
       };
 
-      const fireCallback = (cb: any, tok: string) => {
+      const fireCallback = (cb: any, tok: any) => {
         try {
           if (typeof cb === 'function') { cb(tok); return true; }
           if (typeof cb === 'string' && (window as any)[cb]) { (window as any)[cb](tok); return true; }
@@ -361,6 +402,25 @@ export class CaptchaSolver {
 
       if (T === 'aws_waf') {
         injected += setTextarea('input[name="captcha-token"]');
+      }
+
+      if (T === 'funcaptcha') {
+        // Arkose: hidden fc-token field (often controlled by Angular formcontrolname).
+        injected += setTextarea('input[name="fc-token"]');
+        injected += setTextarea('input[name="verification-token"]');
+        injected += setTextarea('[formcontrolname="fc-token"]');
+        // Try the standard window.ArkoseEnforcement callbacks.
+        try {
+          const ae = (window as any).ArkoseEnforcement || (window as any).arkoseEnforcement;
+          if (ae?.callback) { fireCallback(ae.callback, TOK); injected++; }
+          if (ae?.onCompleted) { fireCallback(ae.onCompleted, {token: TOK}); injected++; }
+        } catch {}
+        // Some sites expose a callback by data-callback attribute.
+        const widgets = document.querySelectorAll<HTMLElement>('[data-callback][data-pkey], [data-pkey]');
+        widgets.forEach(w => {
+          const cb = w.getAttribute('data-callback');
+          if (cb && fireCallback(cb, TOK)) injected++;
+        });
       }
 
       return injected > 0;
@@ -439,15 +499,25 @@ const DETECTOR_JS = `(() => {
     return out;
   }
 
-  // reCAPTCHA (anchor iframe = v2 checkbox/invisible; v3 has no anchor iframe usually)
+  // reCAPTCHA — match both google.com and recaptcha.net hosts (recaptcha.net used to dodge regional blocks).
   const rcEl = document.querySelector('.g-recaptcha[data-sitekey]');
-  const rcAnchor = document.querySelector('iframe[src*="google.com/recaptcha/api2/anchor"], iframe[src*="google.com/recaptcha/enterprise/anchor"]');
+  const rcAnchor = document.querySelector(
+    'iframe[src*="/recaptcha/api2/anchor"], iframe[src*="/recaptcha/enterprise/anchor"]'
+  );
   if (rcAnchor) {
     out.type = 'recaptcha_v2';
-    const m = rcAnchor.getAttribute('src').match(/[?&]k=([^&]+)/);
+    const src = rcAnchor.getAttribute('src') || '';
+    const m = src.match(/[?&]k=([^&]+)/);
     if (m) out.sitekey = m[1];
-    if ((rcAnchor.getAttribute('src') || '').includes('size=invisible')) out.type = 'recaptcha_v2_invisible';
-    evidence.push('recaptcha v2 anchor iframe found');
+    if (src.includes('size=invisible')) out.type = 'recaptcha_v2_invisible';
+    if (src.includes('/enterprise/')) out.enterprise = true;
+    try {
+      const u = new URL(src, location.href);
+      // Sites served from recaptcha.net need apiDomain set on 2captcha task.
+      if (u.hostname.endsWith('recaptcha.net')) out.apiDomain = 'recaptcha.net';
+      else if (u.hostname.endsWith('google.com')) out.apiDomain = 'www.google.com';
+    } catch {}
+    evidence.push('recaptcha anchor iframe found' + (out.enterprise ? ' (enterprise)' : '') + (out.apiDomain ? ' apiDomain=' + out.apiDomain : ''));
     return out;
   }
   if (rcEl) {
@@ -460,13 +530,38 @@ const DETECTOR_JS = `(() => {
   // v3: look for grecaptcha render script with sitekey on it
   const rcV3 = document.querySelector('script[src*="recaptcha/api.js?render="], script[src*="recaptcha/enterprise.js?render="]');
   if (rcV3) {
-    const m = rcV3.getAttribute('src').match(/[?&]render=([^&]+)/);
+    const src = rcV3.getAttribute('src') || '';
+    const m = src.match(/[?&]render=([^&]+)/);
     if (m && m[1] !== 'explicit') {
       out.type = 'recaptcha_v3';
       out.sitekey = m[1];
-      evidence.push('recaptcha v3 script tag detected');
+      if (src.includes('/enterprise.js')) out.enterprise = true;
+      try {
+        const u = new URL(src, location.href);
+        if (u.hostname.endsWith('recaptcha.net')) out.apiDomain = 'recaptcha.net';
+      } catch {}
+      evidence.push('recaptcha v3 script tag detected' + (out.enterprise ? ' (enterprise)' : ''));
       return out;
     }
+  }
+
+  // FunCaptcha (Arkose Labs) — used by OTX, LinkedIn, Roblox, etc.
+  const fcIframe = document.querySelector('iframe[src*="arkoselabs.com"], iframe[src*="funcaptcha"]');
+  const fcEl = document.querySelector('[data-pkey], .funcaptcha, .arkose');
+  if (fcIframe || fcEl) {
+    out.type = 'funcaptcha';
+    if (fcEl) {
+      out.sitekey = fcEl.getAttribute('data-pkey') || undefined;
+    }
+    if (!out.sitekey && fcIframe) {
+      const src = fcIframe.getAttribute('src') || '';
+      // Public key appears as #PUBLIC_KEY& or in path enforcement.<hash>.html#KEY
+      const m = src.match(/#([A-F0-9-]{20,})/i) || src.match(/[?&]pk=([^&]+)/);
+      if (m) out.sitekey = m[1];
+      out.iframeUrl = src;
+    }
+    evidence.push('arkose/funcaptcha element found');
+    return out;
   }
 
   // DataDome
