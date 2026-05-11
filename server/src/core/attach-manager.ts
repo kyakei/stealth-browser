@@ -7,6 +7,7 @@ import { chromium as chromiumExtra } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Logger } from '@utils/logger';
 import { CaptchaSolver, SolveOpts as CaptchaSolveOpts, SolveResult as CaptchaSolveResult, DetectResult as CaptchaDetectResult } from './captcha-solver';
+import { STEALTH_CHROME_ARGS } from './chrome-flags';
 
 chromiumExtra.use(StealthPlugin());
 
@@ -132,18 +133,11 @@ const DEFAULTS: AttachConfig = {
   display: process.env.STEALTH_V2_ATTACH_DISPLAY || ':0',
   userDataDir: '/tmp/rapyd-claude-profile',
   startupTimeoutMs: 15_000,
-  // Args picked to make the real-Chrome-on-user-display experience clean:
-  //  - start-maximized so the user sees a reasonable window
-  //  - no first-run modal, no default-browser prompt
-  //  - no synthetic notifications / translate popups
-  // DO NOT pass --headless here. The whole point is a visible window.
-  extraArgs: [
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-features=Translate,InfinitePrefetch',
-    '--disable-infobars',
-    '--start-maximized'
-  ]
+  // Full stealth + speed flag set (see chrome-flags.ts — ported from Scrapling).
+  // Covers: navigator.webdriver suppression, desktop pointer/hover spoofing,
+  // killed background networking/throttling/breakpad, clean first-run.
+  // DO NOT add --headless here — the whole point is a visible window.
+  extraArgs: [...STEALTH_CHROME_ARGS]
 };
 
 /**

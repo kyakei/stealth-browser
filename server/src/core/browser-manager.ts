@@ -6,6 +6,7 @@ import { EventEmitter } from 'events';
 import { BrowserInstance, BrowserPool, BrowserConfig, Session } from '@utils/types';
 import { Logger } from '@utils/logger';
 import ConfigManager from './config-manager';
+import { STEALTH_CHROME_ARGS, HARMFUL_DEFAULT_ARGS } from './chrome-flags';
 
 // Register the stealth plugin once at module load; covers ~17 evasions (webdriver,
 // chrome.runtime, CDP fingerprint, WebGL vendor, iframe contentWindow, media codecs,
@@ -239,7 +240,10 @@ export class BrowserManager extends EventEmitter implements BrowserPool {
           browser = (await chromiumExtra.launch({
             headless: this.config.headless,
             ...(this.config.executablePath && { executablePath: this.config.executablePath }),
-            args: this.config.args,
+            // config.args first (default.json can override), then the stealth/speed set; de-duped.
+            args: [...new Set([...this.config.args, ...STEALTH_CHROME_ARGS])],
+            // Strip Playwright's automation-revealing defaults (--enable-automation etc.).
+            ignoreDefaultArgs: HARMFUL_DEFAULT_ARGS,
           })) as unknown as Browser;
           break;
         case 'firefox':
