@@ -921,6 +921,18 @@ export class AttachManager {
     return runChain(await this.getPrimary(), steps, opts);
   }
 
+  // ---------------- Page tools: find_similar / crawl ----------------
+
+  public async findSimilar(selector: string, opts: { minScore?: number; limit?: number } = {}) {
+    const { findSimilar } = await import('./page-tools');
+    return findSimilar(await this.getPrimary(), selector, opts);
+  }
+
+  public async crawl(startUrl: string, opts: { maxPages?: number; maxDepth?: number; sameDomain?: boolean; perPageTimeoutMs?: number } = {}) {
+    const { crawl } = await import('./page-tools');
+    return crawl(await this.getPrimary(), startUrl, opts);
+  }
+
   // ---------------- Resource / domain blocking (speed) ----------------
 
   private resourceRoute: ((route: any) => void) | null = null;

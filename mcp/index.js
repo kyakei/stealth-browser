@@ -637,6 +637,40 @@ const TOOLS = [
     handler: (args) => httpRequest('POST', '/v2/attach/chain', { body: args }),
   },
 
+  // ---------------- Page tools: find_similar / crawl ----------------
+  {
+    name: 'browser_find_similar',
+    description: 'Given ONE anchor element (CSS selector), return all DOM elements that are STRUCTURALLY similar to it — same tag, overlapping class/attr names, similar parent/depth/child-shape. Use for "give me all the product cards / user rows / nav links / API-ref scripts on this page" without writing N selectors. Returns {anchor:{...}, matches:[{selector,tag,text,href?,classes,visible,score}]} sorted by score desc. Default minScore 0.55.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector for the one example element.' },
+        minScore: { type: 'number', default: 0.55, description: 'Similarity threshold 0..1.' },
+        limit: { type: 'integer', default: 50, description: 'Max matches to return.' },
+      },
+      required: ['selector'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/find-similar', { body: args }),
+  },
+  {
+    name: 'browser_crawl',
+    description: 'In-browser BFS crawl from `startUrl`. Renders JS, so it catches client-rendered links / lazy routes / JS-injected forms that a passive crawler (BBOT) misses. Returns per-page {url,depth,status,title,links[],forms[],scripts[]} plus a de-duped aggregate {urls[],forms[],scripts[]}. Hard-capped: maxPages≤200 (default 40), maxDepth≤5 (default 2). sameDomain defaults true (only follows links on the start host / its registrable domain). Skips binary/asset extensions. Use AFTER attaching + ideally with browser_block_resources(ads:true) on for speed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startUrl: { type: 'string' },
+        maxPages: { type: 'integer', default: 40 },
+        maxDepth: { type: 'integer', default: 2 },
+        sameDomain: { type: 'boolean', default: true },
+        perPageTimeoutMs: { type: 'integer', default: 20000 },
+      },
+      required: ['startUrl'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/crawl', { body: args }),
+  },
+
   // ---------------- Resource / domain blocking (speed) ----------------
   {
     name: 'browser_block_resources',

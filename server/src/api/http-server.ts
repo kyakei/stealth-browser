@@ -1042,6 +1042,30 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
+    // ---------------- Page tools: find_similar / crawl ----------------
+
+    // POST /v2/attach/find-similar — { selector, minScore?, limit? }
+    this.app.post('/v2/attach/find-similar', async (req, res) => {
+      try {
+        const { selector, minScore, limit } = req.body || {};
+        if (typeof selector !== 'string' || !selector) return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `selector`'));
+        return res.json(this.createSuccessResponse(await this.attachManager.findSimilar(selector, { minScore, limit })));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('FIND_SIMILAR_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/crawl — { startUrl, maxPages?, maxDepth?, sameDomain?, perPageTimeoutMs? }
+    this.app.post('/v2/attach/crawl', async (req, res) => {
+      try {
+        const { startUrl, maxPages, maxDepth, sameDomain, perPageTimeoutMs } = req.body || {};
+        if (typeof startUrl !== 'string' || !startUrl) return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `startUrl`'));
+        return res.json(this.createSuccessResponse(await this.attachManager.crawl(startUrl, { maxPages, maxDepth, sameDomain, perPageTimeoutMs })));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CRAWL_FAILED', (error as Error).message));
+      }
+    });
+
     // ---------------- Resource / domain blocking (speed) ----------------
 
     // POST /v2/attach/block-resources — install context route blocking noisy resources / ad domains.
