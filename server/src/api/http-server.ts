@@ -1066,6 +1066,18 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
+    // ---------------- HTTP replay ----------------
+
+    // POST /v2/attach/replay-http — fire raw HTTP requests reusing the attached session.
+    // Body: ReplayOpts { method?, url?, urls?, idRange?:{from,to,placeholder?,url?}, headers?, body?, concurrency?, maxResponses?, bodyLimit?, forceServerSide? }
+    this.app.post('/v2/attach/replay-http', async (req, res) => {
+      try {
+        return res.json(this.createSuccessResponse(await this.attachManager.replayHttp(req.body || {})));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('REPLAY_HTTP_FAILED', (error as Error).message));
+      }
+    });
+
     // ---------------- Resource / domain blocking (speed) ----------------
 
     // POST /v2/attach/block-resources — install context route blocking noisy resources / ad domains.

@@ -933,6 +933,13 @@ export class AttachManager {
     return crawl(await this.getPrimary(), startUrl, opts);
   }
 
+  // ---------------- HTTP replay (browser for auth, raw HTTP for bulk) ----------------
+
+  public async replayHttp(opts: import('./http-replay').ReplayOpts): Promise<import('./http-replay').ReplayResult> {
+    const { replayHttp } = await import('./http-replay');
+    return replayHttp(await this.getPrimary(), opts);
+  }
+
   // ---------------- Resource / domain blocking (speed) ----------------
 
   private resourceRoute: ((route: any) => void) | null = null;

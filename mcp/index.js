@@ -671,6 +671,34 @@ const TOOLS = [
     handler: (args) => httpRequest('POST', '/v2/attach/crawl', { body: args }),
   },
 
+  // ---------------- HTTP replay — browser for auth, raw HTTP for bulk ----------------
+  {
+    name: 'browser_replay_http',
+    description: 'Fire raw HTTP request(s) reusing the attached session — the "browser for auth, fast HTTP for bulk" pattern. Log in once with the visible Chrome, then hammer N requests (e.g. IDOR/BOLA enumeration: every `/api/user/{id}`) without a page-load each. Same-origin targets run as fetch() inside the page (cookies automatic, real Chrome TLS, no per-request overhead, parallel pool). Cross-origin targets run server-side with cookies pulled from the context + Chrome-ish headers. Targets: single `url`; explicit `urls[]`; or template `idRange:{from,to,placeholder}` (default placeholder "{id}") substituted into `url`. Returns {count, viaBrowser, results:[{url,status,ok,headers,bodyLen,body(truncated),ms,error?}]}. Caps: maxResponses≤20000 (default 1000), concurrency≤50 (default 10), bodyLimit≤100000 (default 2000).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', default: 'GET' },
+        url: { type: 'string', description: 'Single target, or the template when idRange is used.' },
+        urls: { type: 'array', items: { type: 'string' }, description: 'Explicit list of targets.' },
+        idRange: {
+          type: 'object',
+          description: 'Template enumeration: replace `placeholder` in url (or idRange.url) with each int in [from,to].',
+          properties: { from: { type: 'integer' }, to: { type: 'integer' }, placeholder: { type: 'string', default: '{id}' }, url: { type: 'string' } },
+          required: ['from', 'to'],
+        },
+        headers: { type: 'object', description: 'Extra request headers (merged onto the Chrome-ish defaults).' },
+        body: { type: 'string', description: 'Request body for non-GET/HEAD.' },
+        concurrency: { type: 'integer', default: 10 },
+        maxResponses: { type: 'integer', default: 1000 },
+        bodyLimit: { type: 'integer', default: 2000, description: 'Truncate each response body to this many chars.' },
+        forceServerSide: { type: 'boolean', default: false, description: 'Skip the in-page fetch path even for same-origin targets.' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/replay-http', { body: args }),
+  },
+
   // ---------------- Resource / domain blocking (speed) ----------------
   {
     name: 'browser_block_resources',
