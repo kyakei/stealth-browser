@@ -337,6 +337,11 @@ export class AttachManager {
     // #19 fix — kick off CDP body capture in the background. Fire-and-forget
     // so hookPage stays sync (keeps the 'page' event listener contract simple).
     void this.setupCdpBodyCapture(page);
+
+    // Emulate a dark color scheme — bypasses fingerprinters (creepjs etc.) that
+    // flag the `prefers-color-scheme: light` default that headless/automated
+    // Chrome reports. Fire-and-forget; harmless if it fails.
+    void page.emulateMedia({ colorScheme: 'dark' }).catch(() => {});
   }
 
   /**
@@ -895,6 +900,77 @@ export class AttachManager {
 
   public async getCaptchaBalance(apiKey?: string): Promise<{ balance: number }> {
     return this.captchaSolver.getBalance(apiKey);
+  }
+
+  // ---------------- Cloudflare interstitial ----------------
+
+  public async detectCloudflare(): Promise<import('./cloudflare-solver').CloudflareDetectResult> {
+    const { detectCloudflare } = await import('./cloudflare-solver');
+    return detectCloudflare(await this.getPrimary());
+  }
+
+  public async solveCloudflare(opts: { maxRecursion?: number; pollMs?: number } = {}): Promise<import('./cloudflare-solver').CloudflareSolveResult> {
+    const { solveCloudflareInterstitial } = await import('./cloudflare-solver');
+    return solveCloudflareInterstitial(await this.getPrimary(), opts);
+  }
+
+  // ---------------- Resource / domain blocking (speed) ----------------
+
+  private resourceRoute: ((route: any) => void) | null = null;
+
+  /** Install a context-level route that aborts noisy resource types / ad domains.
+   *  Idempotent — re-calling replaces the rule. */
+  public async blockResources(opts: { resourceTypes?: string[]; domains?: string[]; ads?: boolean } = {}): Promise<{ blocking: { resourceTypes: string[]; domainCount: number; ads: boolean } }> {
+    if (!this.browser?.isConnected()) throw new Error('not attached');
+    const ctx = this.browser.contexts()[0];
+    if (!ctx) throw new Error('no context');
+    await this.unblockResources();
+
+    const defaultTypes = ['font', 'image', 'media', 'beacon', 'object', 'imageset', 'texttrack', 'csp_report', 'stylesheet'];
+    const types = new Set((opts.resourceTypes && opts.resourceTypes.length ? opts.resourceTypes : defaultTypes).map(t => t.toLowerCase()));
+    const domains = new Set((opts.domains || []).map(d => d.toLowerCase()));
+    let adSet: ReadonlySet<string> = new Set();
+    if (opts.ads) {
+      const { AD_DOMAINS } = await import('./ad-domains');
+      adSet = AD_DOMAINS;
+    }
+    const hostBlocked = (host: string): boolean => {
+      const h = host.toLowerCase();
+      if (domains.has(h) || adSet.has(h)) return true;
+      let i = h.indexOf('.');
+      while (i !== -1) {
+        const suffix = h.slice(i + 1);
+        if (suffix.includes('.') && (domains.has(suffix) || adSet.has(suffix))) return true;
+        i = h.indexOf('.', i + 1);
+      }
+      return false;
+    };
+
+    const handler = (route: any) => {
+      try {
+        const req = route.request();
+        if (types.has(String(req.resourceType()).toLowerCase())) return void route.abort().catch(() => {});
+        if (domains.size || adSet.size) {
+          let host = '';
+          try { host = new URL(req.url()).hostname; } catch {}
+          if (host && hostBlocked(host)) return void route.abort().catch(() => {});
+        }
+        return void route.continue().catch(() => {});
+      } catch { try { route.continue(); } catch {} }
+    };
+    await ctx.route('**/*', handler);
+    this.resourceRoute = handler;
+    return { blocking: { resourceTypes: [...types], domainCount: domains.size + adSet.size, ads: !!opts.ads } };
+  }
+
+  public async unblockResources(): Promise<{ removed: boolean }> {
+    if (!this.resourceRoute) return { removed: false };
+    if (this.browser?.isConnected()) {
+      const ctx = this.browser.contexts()[0];
+      if (ctx) await ctx.unroute('**/*', this.resourceRoute).catch(() => {});
+    }
+    this.resourceRoute = null;
+    return { removed: true };
   }
 
   // ---------------- HAR export (#6) ----------------

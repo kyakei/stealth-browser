@@ -1006,6 +1006,42 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
+    // ---------------- Cloudflare interstitial ----------------
+
+    // GET /v2/attach/cloudflare/detect — classify any Cloudflare challenge on the current tab.
+    this.app.get('/v2/attach/cloudflare/detect', async (_req, res) => {
+      try {
+        return res.json(this.createSuccessResponse(await this.attachManager.detectCloudflare()));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CF_DETECT_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/cloudflare/solve — clear the interstitial (free; coordinate-click). Body: {maxRecursion?, pollMs?}
+    this.app.post('/v2/attach/cloudflare/solve', async (req, res) => {
+      try {
+        return res.json(this.createSuccessResponse(await this.attachManager.solveCloudflare(req.body || {})));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CF_SOLVE_FAILED', (error as Error).message));
+      }
+    });
+
+    // ---------------- Resource / domain blocking (speed) ----------------
+
+    // POST /v2/attach/block-resources — install context route blocking noisy resources / ad domains.
+    // Body: { enable: boolean, resourceTypes?: string[], domains?: string[], ads?: boolean }
+    this.app.post('/v2/attach/block-resources', async (req, res) => {
+      try {
+        const { enable, resourceTypes, domains, ads } = req.body || {};
+        if (enable === false) {
+          return res.json(this.createSuccessResponse(await this.attachManager.unblockResources()));
+        }
+        return res.json(this.createSuccessResponse(await this.attachManager.blockResources({ resourceTypes, domains, ads })));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('BLOCK_RESOURCES_FAILED', (error as Error).message));
+      }
+    });
+
     // ---------------- HAR export (#6) ----------------
 
     // GET /v2/attach/har

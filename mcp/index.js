@@ -599,6 +599,44 @@ const TOOLS = [
     },
     handler: (args) => httpRequest('GET', '/v2/attach/captcha/balance', { query: args }),
   },
+
+  // ---------------- Cloudflare interstitial (free, no 2captcha) ----------------
+  {
+    name: 'browser_cloudflare_detect',
+    description: 'Classify any Cloudflare challenge on the attached tab. Returns {challenge: "non-interactive"|"managed"|"interactive"|"embedded"|null, evidence[]}. null = no CF wall (or already cleared).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: () => httpRequest('GET', '/v2/attach/cloudflare/detect'),
+  },
+  {
+    name: 'browser_solve_cloudflare',
+    description: 'Clear a Cloudflare "Verify you are human" / "Just a moment…" interstitial on the attached tab — FREE (no 2captcha). non-interactive → waits it out; managed/interactive/embedded → coordinate-clicks the Turnstile checkbox iframe + waits + retries. Works when the browser fingerprint is clean (which the stealth flags handle). If CF escalates to a hard interactive puzzle this won\'t crack it — fall back to browser_solve_captcha (type:"turnstile") then. Returns {challenge, solved, attempts, durationMs}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxRecursion: { type: 'integer', default: 3, description: 'Max re-click retries if the wall persists.' },
+        pollMs: { type: 'integer', default: 1000, description: 'Poll interval while waiting for a non-interactive wall to clear.' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/cloudflare/solve', { body: args }),
+  },
+
+  // ---------------- Resource / domain blocking (speed) ----------------
+  {
+    name: 'browser_block_resources',
+    description: 'Toggle a context-level route that aborts noisy resource types and/or ad/tracker domains — speeds up heavy enterprise pages (8s→2s typical) and de-noises the network capture. Default blocks: font/image/media/beacon/object/imageset/texttrack/csp_report/stylesheet. Set ads:true to also block ~120 known ad/analytics domains (Google Analytics, Segment, Hotjar, doubleclick, etc.). Pass enable:false to remove. NOTE: turn this OFF (enable:false) before taking screenshots — blocked images render blank.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        enable: { type: 'boolean', default: true, description: 'true = install/replace the rule; false = remove it.' },
+        resourceTypes: { type: 'array', items: { type: 'string' }, description: 'Override the default blocked resource-type list.' },
+        domains: { type: 'array', items: { type: 'string' }, description: 'Extra domains to block (subdomain-suffix matched).' },
+        ads: { type: 'boolean', default: false, description: 'Also block the built-in ad/analytics/tracker domain list.' },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/block-resources', { body: args }),
+  },
 ];
 
 const server = new Server(
