@@ -87,6 +87,7 @@ The server loads `.env` via dotenv on startup. `.env` is gitignored. (The Cloudf
 | Navigation | `browser_navigate`, `browser_wait_for`, `browser_list_tabs`, `browser_select_tab` |
 | Page read | `browser_page_text`, `browser_form_snapshot`, `browser_eval_js`, `browser_dom_snapshot`, `browser_screenshot` |
 | Page interact | `browser_click_text`, `browser_click_selector`, `browser_type`, `browser_keyboard_type` |
+| Human behavior | `browser_mouse_move` (Bezier cursor path + jitter + overshoot); `human:true` flag on the click tools (curved approach + randomized button-hold); `browser_type`/`browser_keyboard_type` auto-type char-by-char with per-keystroke random delays per `plugins.automation` config |
 | **Chain** | `browser_chain` — run a step sequence server-side in one call |
 | **HTTP replay** | `browser_replay_http` — bulk authed requests (IDOR enum) |
 | Network | `browser_network_query`, `browser_network_entry`, `browser_network_clear`, `browser_har_export` |
