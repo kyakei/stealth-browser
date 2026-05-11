@@ -914,6 +914,13 @@ export class AttachManager {
     return solveCloudflareInterstitial(await this.getPrimary(), opts);
   }
 
+  // ---------------- Chain runner (multi-step in one call) ----------------
+
+  public async runChain(steps: any[], opts: { continueOnError?: boolean } = {}): Promise<import('./chain-runner').ChainResult> {
+    const { runChain } = await import('./chain-runner');
+    return runChain(await this.getPrimary(), steps, opts);
+  }
+
   // ---------------- Resource / domain blocking (speed) ----------------
 
   private resourceRoute: ((route: any) => void) | null = null;

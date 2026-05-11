@@ -1026,6 +1026,22 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
+    // ---------------- Chain runner ----------------
+
+    // POST /v2/attach/chain — run a sequence of browser ops server-side, return final state.
+    // Body: { steps: ChainStep[], continueOnError?: boolean }
+    this.app.post('/v2/attach/chain', async (req, res) => {
+      try {
+        const { steps, continueOnError } = req.body || {};
+        if (!Array.isArray(steps) || steps.length === 0) {
+          return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide non-empty `steps` array'));
+        }
+        return res.json(this.createSuccessResponse(await this.attachManager.runChain(steps, { continueOnError })));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('CHAIN_FAILED', (error as Error).message));
+      }
+    });
+
     // ---------------- Resource / domain blocking (speed) ----------------
 
     // POST /v2/attach/block-resources — install context route blocking noisy resources / ad domains.

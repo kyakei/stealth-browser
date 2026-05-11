@@ -621,6 +621,22 @@ const TOOLS = [
     handler: (args) => httpRequest('POST', '/v2/attach/cloudflare/solve', { body: args }),
   },
 
+  // ---------------- Chain runner — collapse multi-step flows into one call ----------------
+  {
+    name: 'browser_chain',
+    description: 'Run a SEQUENCE of browser ops server-side in one call, returning only the final state. Use this instead of N separate tool calls for any multi-step flow (login, fill-and-submit, navigate-and-read) — collapses ~10 round-trips into 1. `steps` is an array of single-key objects; supported ops: navigate {url,waitUntil?,timeout?,referer?}, waitFor {selector?|text?,timeout?}, type {selector,text,clear?,delay?}, keyboardType {selector?,text,delay?}, click {selector}, clickText {text}, press {key}, eval {script,arg?}, scroll {to?:"top"|"bottom"|selector?}, sleep {ms}, screenshot {path?,fullPage?}, returnState {url?,title?,text?,textLimit?,forms?,html?,htmlLimit?}. By default a failed step aborts the chain; set continueOnError:true to push through. Always ends with a state snapshot (default {url,title}, or whatever the last returnState requested). Example: [{navigate:{url:"https://x/login"}},{waitFor:{selector:"#u"}},{type:{selector:"#u",text:"a"}},{type:{selector:"#p",text:"b"}},{click:{selector:"button[type=submit]"}},{waitFor:{text:"Dashboard"}},{returnState:{text:true,forms:true}}]',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        steps: { type: 'array', items: { type: 'object' }, description: 'Ordered list of single-key step objects (see description).' },
+        continueOnError: { type: 'boolean', default: false, description: 'If true, a failed step records the error and the chain continues instead of aborting.' },
+      },
+      required: ['steps'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/chain', { body: args }),
+  },
+
   // ---------------- Resource / domain blocking (speed) ----------------
   {
     name: 'browser_block_resources',
