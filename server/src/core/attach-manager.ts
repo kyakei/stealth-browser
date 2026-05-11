@@ -8,8 +8,29 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Logger } from '@utils/logger';
 import { CaptchaSolver, SolveOpts as CaptchaSolveOpts, SolveResult as CaptchaSolveResult, DetectResult as CaptchaDetectResult } from './captcha-solver';
 import { STEALTH_CHROME_ARGS } from './chrome-flags';
+import ConfigManager from './config-manager';
 
 chromiumExtra.use(StealthPlugin());
+
+// Human-behavior settings, read from plugins.automation in the config (with
+// sane fallbacks if the config block is missing). Re-read lazily so a config
+// hot-reload takes effect.
+function humanCfg(): { enabled: boolean; typeMin: number; typeMax: number; clickMin: number; clickMax: number } {
+  try {
+    const a: any = ConfigManager.getInstance().get('plugins.automation') || {};
+    return {
+      enabled: a.humanBehavior !== false,
+      typeMin: a.typingDelay?.min ?? 20,
+      typeMax: a.typingDelay?.max ?? 80,
+      clickMin: a.clickDelay?.min ?? 100,
+      clickMax: a.clickDelay?.max ?? 300,
+    };
+  } catch {
+    return { enabled: true, typeMin: 20, typeMax: 80, clickMin: 100, clickMax: 300 };
+  }
+}
+const _rand = (lo: number, hi: number) => Math.floor(lo + Math.random() * (hi - lo));
+const _sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 export interface CookieSnapshot {
   name: string;
@@ -522,32 +543,86 @@ export class AttachManager {
     const el = await page.waitForSelector(selector, { timeout: 10_000 });
     if (!el) throw new Error(`selector not found: ${selector}`);
     if (opts.clear !== false) await el.click({ clickCount: 3 });
-    await el.type(text, { delay: opts.delay ?? 30 });
+    const hc = humanCfg();
+    if (opts.delay === undefined && hc.enabled) {
+      // Per-keystroke random delay instead of a fixed one.
+      await el.focus();
+      for (const ch of text) { await page.keyboard.type(ch); await _sleep(_rand(hc.typeMin, hc.typeMax)); }
+    } else {
+      await el.type(text, { delay: opts.delay ?? 30 });
+    }
   }
 
-  public async click(selector: string): Promise<void> {
+  public async click(selector: string, opts: { human?: boolean } = {}): Promise<void> {
     const page = await this.getPrimary();
+    if (opts.human) {
+      const { humanClickElement } = await import('./human-mouse');
+      const hc = humanCfg();
+      await humanClickElement(page, selector, { holdMin: hc.clickMin / 2, holdMax: hc.clickMax / 2 });
+      return;
+    }
     const el = await page.waitForSelector(selector, { timeout: 10_000 });
     if (!el) throw new Error(`selector not found: ${selector}`);
     await el.click();
   }
 
   /** Focus an element then send real keystrokes via CDP Input domain. */
-  public async keyboardType(selector: string | null, text: string, delay = 40): Promise<void> {
+  public async keyboardType(selector: string | null, text: string, delay?: number): Promise<void> {
     const page = await this.getPrimary();
     if (selector) {
       const el = await page.waitForSelector(selector, { timeout: 10_000 });
       if (!el) throw new Error(`selector not found: ${selector}`);
       await el.focus();
     }
-    await page.keyboard.type(text, { delay });
+    const hc = humanCfg();
+    if (delay === undefined && hc.enabled) {
+      for (const ch of text) { await page.keyboard.type(ch); await _sleep(_rand(hc.typeMin, hc.typeMax)); }
+    } else {
+      await page.keyboard.type(text, { delay: delay ?? 40 });
+    }
   }
 
   /** Click the first element whose innerText matches (substring). */
-  public async clickText(text: string): Promise<void> {
+  public async clickText(text: string, opts: { human?: boolean } = {}): Promise<void> {
     const page = await this.getPrimary();
+    if (opts.human) {
+      // Resolve the deepest element containing `text`, scroll it into view, and
+      // return its viewport rect — done in one page.evaluate to sidestep
+      // Playwright locator/visibility edge cases on multi-match text selectors.
+      const rect = await page.evaluate((txt: string) => {
+        const cand = Array.from(document.querySelectorAll<HTMLElement>('a,button,[role="button"],input[type="submit"],input[type="button"],span,div,li,td,label,p,h1,h2,h3'));
+        // deepest element whose own text contains txt and none of whose children's text does
+        let best: HTMLElement | null = null;
+        for (const el of cand) {
+          const t = (el.textContent || '').trim();
+          if (!t.includes(txt)) continue;
+          const childHas = Array.from(el.children).some(c => ((c.textContent || '').trim()).includes(txt));
+          if (childHas) continue;
+          best = el; // later candidates in document order are fine; we take the last deepest match
+        }
+        if (!best) return null;
+        best.scrollIntoView({ block: 'center', inline: 'center' });
+        const r = best.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      }, text);
+      if (!rect || rect.w < 1 || rect.h < 1) throw new Error(`no clickable element containing text: ${text}`);
+      const { humanClickAt } = await import('./human-mouse');
+      const hc = humanCfg();
+      const x = rect.x + rect.w * (0.32 + Math.random() * 0.36);
+      const y = rect.y + rect.h * (0.32 + Math.random() * 0.36);
+      await humanClickAt(page, x, y, { holdMin: hc.clickMin / 2, holdMax: hc.clickMax / 2 });
+      return;
+    }
     // Use Playwright's text locator for a proper hit-test click.
     await page.locator(`text=${text}`).first().click({ timeout: 10_000 });
+  }
+
+  /** Move the cursor to (x,y) along a human-ish curved path (Bezier + jitter + optional overshoot). */
+  public async mouseMove(x: number, y: number): Promise<{ x: number; y: number }> {
+    const page = await this.getPrimary();
+    const { humanMove } = await import('./human-mouse');
+    await humanMove(page, x, y);
+    return { x, y };
   }
 
   public async pageText(limit = 8000): Promise<{ url: string; title: string; text: string }> {

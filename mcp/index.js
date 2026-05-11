@@ -120,10 +120,10 @@ const TOOLS = [
   },
   {
     name: 'browser_click_text',
-    description: 'Click the first element whose visible text matches (contains) the given string. Simpler than writing a CSS selector.',
+    description: 'Click the first element whose visible text matches (contains) the given string. Simpler than writing a CSS selector. Set human:true to approach with a curved mouse path (Bezier + jitter + occasional overshoot-correct) + randomized button-hold instead of teleport-clicking — use against sites with behavioral anti-bot / for keeping reCAPTCHA-v3 / Arkose trust up.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string' } },
+      properties: { text: { type: 'string' }, human: { type: 'boolean', default: false } },
       required: ['text'],
       additionalProperties: false,
     },
@@ -131,14 +131,25 @@ const TOOLS = [
   },
   {
     name: 'browser_click_selector',
-    description: 'Click the element matching a CSS selector on the attached tab.',
+    description: 'Click the element matching a CSS selector on the attached tab. Set human:true for a curved-mouse-path approach (Bezier + jitter + occasional overshoot-correct) + randomized button-hold instead of a teleport click.',
     inputSchema: {
       type: 'object',
-      properties: { selector: { type: 'string' } },
+      properties: { selector: { type: 'string' }, human: { type: 'boolean', default: false } },
       required: ['selector'],
       additionalProperties: false,
     },
     handler: (args) => httpRequest('POST', '/v2/attach/click', { body: args }),
+  },
+  {
+    name: 'browser_mouse_move',
+    description: 'Move the cursor to (x,y) along a human-like curved path — cubic-Bezier with eased timing, per-step micro-jitter, and an occasional overshoot-and-correct at the end — instead of teleporting. Position is tracked per-tab between calls. Use to "warm up" cursor behavior before a sensitive action, or to wander the page a bit. Coords are CSS pixels relative to the viewport.',
+    inputSchema: {
+      type: 'object',
+      properties: { x: { type: 'number' }, y: { type: 'number' } },
+      required: ['x', 'y'],
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/mouse-move', { body: args }),
   },
   {
     name: 'browser_type',

@@ -730,31 +730,44 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
-    // Body: { text: string }  — click first element containing this text.
+    // Body: { text: string, human?: boolean }  — click first element containing this text.
     this.app.post('/v2/attach/click-text', async (req, res) => {
       try {
-        const { text } = req.body || {};
+        const { text, human } = req.body || {};
         if (typeof text !== 'string' || !text) {
           return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `text`'));
         }
-        await this.attachManager.clickText(text);
-        return res.json(this.createSuccessResponse({ clicked: text }));
+        await this.attachManager.clickText(text, { human: !!human });
+        return res.json(this.createSuccessResponse({ clicked: text, human: !!human }));
       } catch (error) {
         return res.status(500).json(this.createErrorResponse('ATTACH_CLICKTEXT_FAILED', (error as Error).message));
       }
     });
 
-    // Body: { selector: string }
+    // Body: { selector: string, human?: boolean }
     this.app.post('/v2/attach/click', async (req, res) => {
       try {
-        const { selector } = req.body || {};
+        const { selector, human } = req.body || {};
         if (typeof selector !== 'string' || !selector) {
           return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `selector` string'));
         }
-        await this.attachManager.click(selector);
-        return res.json(this.createSuccessResponse({ clicked: true, selector }));
+        await this.attachManager.click(selector, { human: !!human });
+        return res.json(this.createSuccessResponse({ clicked: true, selector, human: !!human }));
       } catch (error) {
         return res.status(500).json(this.createErrorResponse('ATTACH_CLICK_FAILED', (error as Error).message));
+      }
+    });
+
+    // Body: { x: number, y: number }  — move cursor along a human-ish curved path.
+    this.app.post('/v2/attach/mouse-move', async (req, res) => {
+      try {
+        const { x, y } = req.body || {};
+        if (typeof x !== 'number' || typeof y !== 'number') {
+          return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide numeric `x` and `y`'));
+        }
+        return res.json(this.createSuccessResponse(await this.attachManager.mouseMove(x, y)));
+      } catch (error) {
+        return res.status(500).json(this.createErrorResponse('ATTACH_MOUSEMOVE_FAILED', (error as Error).message));
       }
     });
 
