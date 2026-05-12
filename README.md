@@ -85,7 +85,7 @@ The server loads `.env` via dotenv on startup. `.env` is gitignored. (The Cloudf
 |---|---|
 | Lifecycle | `browser_health`, `browser_attach`, `browser_detach`, `browser_attach_status` |
 | Navigation | `browser_navigate`, `browser_wait_for`, `browser_list_tabs`, `browser_select_tab` |
-| Page read | `browser_page_text`, `browser_form_snapshot`, `browser_eval_js`, `browser_dom_snapshot`, `browser_screenshot` |
+| Page read | `browser_page_text`, `browser_extract` (selector-narrowed, text/html/markdown, PI-sanitized), `browser_form_snapshot`, `browser_eval_js`, `browser_dom_snapshot`, `browser_screenshot` |
 | Page interact | `browser_click_text`, `browser_click_selector`, `browser_type`, `browser_keyboard_type` |
 | Human behavior | `browser_mouse_move` (Bezier cursor path + jitter + overshoot); `human:true` flag on the click tools (curved approach + randomized button-hold); `browser_type`/`browser_keyboard_type` auto-type char-by-char with per-keystroke random delays per `plugins.automation` config |
 | **Chain** | `browser_chain` — run a step sequence server-side in one call |
@@ -97,7 +97,7 @@ The server loads `.env` via dotenv on startup. `.env` is gitignored. (The Cloudf
 | Intercept (Burp) | `browser_intercept_enable`, `browser_intercept_status`, `browser_intercept_forward`, `browser_intercept_drop`, `browser_intercept_disable` |
 | Captcha | `browser_captcha_balance`, `browser_captcha_detect`, `browser_solve_captcha` |
 | Cloudflare | `browser_cloudflare_detect`, `browser_solve_cloudflare` (free — no 2captcha) |
-| Page recon | `browser_find_similar`, `browser_crawl`, `browser_extract_tokens` |
+| Page recon | `browser_find_similar`, `browser_crawl` (in-browser BFS; optional `robotsRespect` + `includeSitemap`), `browser_extract_tokens` |
 | Speed | `browser_block_resources` (resource-type + ad/tracker domain blocking) |
 
 ## Captcha solver — supported types
