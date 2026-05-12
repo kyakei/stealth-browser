@@ -1003,9 +1003,14 @@ export class AttachManager {
     return findSimilar(await this.getPrimary(), selector, opts);
   }
 
-  public async crawl(startUrl: string, opts: { maxPages?: number; maxDepth?: number; sameDomain?: boolean; perPageTimeoutMs?: number } = {}) {
+  public async crawl(startUrl: string, opts: { maxPages?: number; maxDepth?: number; sameDomain?: boolean; perPageTimeoutMs?: number; robotsRespect?: boolean; includeSitemap?: boolean } = {}) {
     const { crawl } = await import('./page-tools');
     return crawl(await this.getPrimary(), startUrl, opts);
+  }
+
+  public async extract(opts: import('./extract').ExtractOpts = {}): Promise<import('./extract').ExtractResult> {
+    const { extractContent } = await import('./extract');
+    return extractContent(await this.getPrimary(), opts);
   }
 
   // ---------------- HTTP replay (browser for auth, raw HTTP for bulk) ----------------

@@ -116,10 +116,12 @@ const SKIP_EXT = /\.(png|jpe?g|gif|svg|webp|ico|css|js|woff2?|ttf|eot|map|pdf|zi
 export async function crawl(
   page: Page,
   startUrl: string,
-  opts: { maxPages?: number; maxDepth?: number; sameDomain?: boolean; perPageTimeoutMs?: number } = {},
+  opts: { maxPages?: number; maxDepth?: number; sameDomain?: boolean; perPageTimeoutMs?: number; robotsRespect?: boolean; includeSitemap?: boolean } = {},
 ): Promise<{
   start: string;
   pagesCrawled: number;
+  robots?: { disallow: string[]; honored: boolean };
+  sitemap?: { urlsSeeded: number };
   pages: Array<{ url: string; depth: number; status?: number; title: string; links: string[]; forms: any[]; scripts: string[] }>;
   aggregate: { urls: string[]; forms: any[]; scripts: string[] };
 }> {
@@ -127,9 +129,41 @@ export async function crawl(
   const maxDepth = Math.min(opts.maxDepth ?? 2, 5);
   const sameDomain = opts.sameDomain !== false;
   const perPageTimeout = opts.perPageTimeoutMs ?? 20000;
+  const robotsRespect = !!opts.robotsRespect;
+  const includeSitemap = !!opts.includeSitemap;
 
-  const startHost = (() => { try { return new URL(startUrl).hostname; } catch { throw new Error(`invalid startUrl: ${startUrl}`); } })();
+  const startU = (() => { try { return new URL(startUrl); } catch { throw new Error(`invalid startUrl: ${startUrl}`); } })();
+  const startHost = startU.hostname;
+  const origin = startU.origin;
   const sameSite = (u: string) => { try { const h = new URL(u).hostname; return h === startHost || h.endsWith('.' + startHost.split('.').slice(-2).join('.')); } catch { return false; } };
+
+  // robots.txt — parse the `User-agent: *` block's Disallow rules (cheap prefix match, * wildcards collapsed).
+  let disallow: string[] = [];
+  if (robotsRespect) {
+    try {
+      const txt = await page.evaluate(async (o) => { const r = await fetch(o + '/robots.txt'); return r.ok ? await r.text() : ''; }, origin).catch(() => '');
+      let inStar = false;
+      for (const lineRaw of txt.split('\n')) {
+        const line = lineRaw.replace(/#.*$/, '').trim();
+        if (!line) continue;
+        const m = line.match(/^([^:]+):\s*(.*)$/); if (!m) continue;
+        const k = m[1]!.toLowerCase().trim(); const v = m[2]!.trim();
+        if (k === 'user-agent') inStar = (v === '*');
+        else if (k === 'disallow' && inStar && v) disallow.push(v);
+      }
+      disallow = [...new Set(disallow)];
+    } catch { /* ignore */ }
+  }
+  const isDisallowed = (u: string): boolean => {
+    if (!disallow.length) return false;
+    let path: string; try { path = new URL(u).pathname + new URL(u).search; } catch { return false; }
+    for (const rule of disallow) {
+      const r = rule.replace(/\*/g, '');                // collapse wildcards to a plain prefix check
+      if (r === '/') return true;
+      if (path.startsWith(r)) return true;
+    }
+    return false;
+  };
 
   const seen = new Set<string>([startUrl.split('#')[0]!]);
   const queue: Array<{ url: string; depth: number }> = [{ url: startUrl, depth: 0 }];
@@ -138,8 +172,32 @@ export async function crawl(
   const allForms: any[] = [];
   const allScripts = new Set<string>();
 
+  // sitemap.xml — seed the queue (follows a sitemap-index one level deep). Capped.
+  let sitemapSeeded = 0;
+  if (includeSitemap) {
+    try {
+      const fetchXml = (u: string) => page.evaluate(async (x) => { const r = await fetch(x); return r.ok ? await r.text() : ''; }, u).catch(() => '');
+      const root = await fetchXml(origin + '/sitemap.xml');
+      const locs = (xml: string) => (xml.match(/<loc>\s*([^<\s]+)\s*<\/loc>/gi) || []).map(s => s.replace(/<\/?loc>/gi, '').trim());
+      let urls: string[] = [];
+      if (/<sitemapindex/i.test(root)) {
+        for (const sm of locs(root).slice(0, 10)) urls.push(...locs(await fetchXml(sm)));
+      } else {
+        urls = locs(root);
+      }
+      for (const u of urls) {
+        const norm = u.split('#')[0]!;
+        if (norm.startsWith('http') && (!sameDomain || sameSite(norm)) && !SKIP_EXT.test(norm) && !seen.has(norm) && !(robotsRespect && isDisallowed(norm))) {
+          seen.add(norm); queue.push({ url: norm, depth: 1 }); sitemapSeeded++;
+          if (sitemapSeeded >= 200) break;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   while (queue.length && pages.length < maxPages) {
     const { url, depth } = queue.shift()!;
+    if (robotsRespect && isDisallowed(url)) { Logger.debug('crawl: robots disallow', { url }); continue; }
     let status: number | undefined;
     try {
       const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: perPageTimeout });
@@ -178,6 +236,7 @@ export async function crawl(
         if (seen.has(norm)) continue;
         if (SKIP_EXT.test(norm)) continue;
         if (sameDomain && !sameSite(norm)) continue;
+        if (robotsRespect && isDisallowed(norm)) continue;
         seen.add(norm);
         queue.push({ url: norm, depth: depth + 1 });
       }
@@ -187,6 +246,8 @@ export async function crawl(
   return {
     start: startUrl,
     pagesCrawled: pages.length,
+    ...(robotsRespect ? { robots: { disallow, honored: true } } : {}),
+    ...(includeSitemap ? { sitemap: { urlsSeeded: sitemapSeeded } } : {}),
     pages,
     aggregate: { urls: Array.from(allUrls).sort(), forms: allForms, scripts: Array.from(allScripts).sort() },
   };

@@ -1068,14 +1068,23 @@ export class HTTPServer extends EventEmitter {
       }
     });
 
-    // POST /v2/attach/crawl — { startUrl, maxPages?, maxDepth?, sameDomain?, perPageTimeoutMs? }
+    // POST /v2/attach/crawl — { startUrl, maxPages?, maxDepth?, sameDomain?, perPageTimeoutMs?, robotsRespect?, includeSitemap? }
     this.app.post('/v2/attach/crawl', async (req, res) => {
       try {
-        const { startUrl, maxPages, maxDepth, sameDomain, perPageTimeoutMs } = req.body || {};
+        const { startUrl, maxPages, maxDepth, sameDomain, perPageTimeoutMs, robotsRespect, includeSitemap } = req.body || {};
         if (typeof startUrl !== 'string' || !startUrl) return res.status(400).json(this.createErrorResponse('BAD_INPUT', 'Provide `startUrl`'));
-        return res.json(this.createSuccessResponse(await this.attachManager.crawl(startUrl, { maxPages, maxDepth, sameDomain, perPageTimeoutMs })));
+        return res.json(this.createSuccessResponse(await this.attachManager.crawl(startUrl, { maxPages, maxDepth, sameDomain, perPageTimeoutMs, robotsRespect, includeSitemap })));
       } catch (error) {
         return res.status(400).json(this.createErrorResponse('CRAWL_FAILED', (error as Error).message));
+      }
+    });
+
+    // POST /v2/attach/extract — { selector?, format?, mainContentOnly?, sanitize?, limit? }
+    this.app.post('/v2/attach/extract', async (req, res) => {
+      try {
+        return res.json(this.createSuccessResponse(await this.attachManager.extract(req.body || {})));
+      } catch (error) {
+        return res.status(400).json(this.createErrorResponse('EXTRACT_FAILED', (error as Error).message));
       }
     });
 

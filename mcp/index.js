@@ -666,7 +666,7 @@ const TOOLS = [
   },
   {
     name: 'browser_crawl',
-    description: 'In-browser BFS crawl from `startUrl`. Renders JS, so it catches client-rendered links / lazy routes / JS-injected forms that a passive crawler (BBOT) misses. Returns per-page {url,depth,status,title,links[],forms[],scripts[]} plus a de-duped aggregate {urls[],forms[],scripts[]}. Hard-capped: maxPages≤200 (default 40), maxDepth≤5 (default 2). sameDomain defaults true (only follows links on the start host / its registrable domain). Skips binary/asset extensions. Use AFTER attaching + ideally with browser_block_resources(ads:true) on for speed.',
+    description: 'In-browser BFS crawl from `startUrl`. Renders JS, so it catches client-rendered links / lazy routes / JS-injected forms that a passive crawler (BBOT) misses. Returns per-page {url,depth,status,title,links[],forms[],scripts[]} plus a de-duped aggregate {urls[],forms[],scripts[]}. Hard-capped: maxPages≤200 (default 40), maxDepth≤5 (default 2). sameDomain defaults true (only follows links on the start host / its registrable domain). Skips binary/asset extensions. Optional: robotsRespect (parse /robots.txt User-agent:* Disallow rules and skip matching paths) and includeSitemap (seed the queue from /sitemap.xml, follows a sitemap-index one level, ≤200 URLs). Use AFTER attaching + ideally with browser_block_resources(ads:true) on for speed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -675,11 +675,29 @@ const TOOLS = [
         maxDepth: { type: 'integer', default: 2 },
         sameDomain: { type: 'boolean', default: true },
         perPageTimeoutMs: { type: 'integer', default: 20000 },
+        robotsRespect: { type: 'boolean', default: false, description: 'Honor /robots.txt Disallow rules for User-agent: *.' },
+        includeSitemap: { type: 'boolean', default: false, description: 'Seed the crawl queue from /sitemap.xml.' },
       },
       required: ['startUrl'],
       additionalProperties: false,
     },
     handler: (args) => httpRequest('POST', '/v2/attach/crawl', { body: args }),
+  },
+  {
+    name: 'browser_extract',
+    description: 'Pull page content the token-efficient way. `selector` narrows to just the matching subtree(s) before extraction (kills the "8000 chars of nav/footer/cookie-banner to find one paragraph" problem); multiple matches are concatenated. `format`: "text" (innerText, smallest), "html" (when structure matters), "markdown" (headings/lists/links/code render clean, fewest tokens per unit of readable content; tables pass through as HTML). `mainContentOnly` (default true when no selector) → falls back to <main>/<article>/[role=main]/<body>. `sanitize` (default true) strips CSS-hidden / aria-hidden / <template> / <script>/<style>/<noscript> / comments / zero-width unicode before extracting (prompt-injection hygiene). Returns {url,title,format,matched,content,truncated}. limit caps output chars (default 16000, max 200000). Prefer this over browser_page_text when you want a *specific part* of a page or a clean markdown rendering.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector to narrow to (all matches concatenated).' },
+        format: { type: 'string', enum: ['text', 'html', 'markdown'], default: 'text' },
+        mainContentOnly: { type: 'boolean', default: true, description: 'Ignored when selector is given.' },
+        sanitize: { type: 'boolean', default: true },
+        limit: { type: 'integer', default: 16000 },
+      },
+      additionalProperties: false,
+    },
+    handler: (args) => httpRequest('POST', '/v2/attach/extract', { body: args }),
   },
 
   // ---------------- HTTP replay — browser for auth, raw HTTP for bulk ----------------
